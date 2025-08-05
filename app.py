@@ -5,10 +5,8 @@ import xlsxwriter
 from fpdf import FPDF
 from rapidfuzz import fuzz
 
-# --- CONFIGURAZIONE ---
 st.set_page_config(page_title="Ricerca articoli - Agenti", layout="wide")
 
-# --- CARICA DATI ---
 @st.cache_data
 def load_data():
     url = "https://docs.google.com/spreadsheets/d/10BFJQTV1yL69cotE779zuR8vtG5NqKWOVH0Uv1AnGaw/export?format=csv&gid=707323537"
@@ -25,14 +23,16 @@ def load_data():
     df = df.rename(columns=mapping)
     df = df[list(mapping.values())]
 
-    # Converte il codice in numerico senza decimali
+    # Codice prodotto numerico senza decimali
     df['codice'] = pd.to_numeric(df['codice'], errors='coerce').fillna(0).astype(int)
+
+    # Forza nomi colonne univoci (fix per duplicate names)
+    df.columns = pd.io.parsers.ParserBase({'names': df.columns})._maybe_dedup_names(df.columns)
 
     return df
 
 df = load_data()
 
-# --- INIZIALIZZA SESSION STATE ---
 if "paniere" not in st.session_state:
     st.session_state["paniere"] = []
 if "selected_rows" not in st.session_state:
@@ -40,7 +40,6 @@ if "selected_rows" not in st.session_state:
 if "active_filters" not in st.session_state:
     st.session_state["active_filters"] = {"categoria": set(), "tipologia": set(), "provenienza": set()}
 
-# --- FUNZIONE DI RICERCA FUZZY ---
 def fuzzy_filter(df, query, threshold=50):
     if not query:
         return df
@@ -50,19 +49,14 @@ def fuzzy_filter(df, query, threshold=50):
     ), axis=1)
     return df[mask]
 
-# --- FILTRO SU TAG ATTIVI ---
 def apply_tag_filters(df):
     for field, excluded in st.session_state["active_filters"].items():
         if excluded:
             df = df[~df[field].isin(excluded)]
     return df
 
-# --- LAYOUT A DUE COLONNE ---
 col1, col2 = st.columns([2, 1])
 
-# ===========================
-# COLONNA SINISTRA: RICERCA
-# ===========================
 with col1:
     st.header("🔍 Ricerca articoli")
     query = st.text_input("Cerca prodotto, codice, categoria, tipologia, provenienza:")
@@ -71,23 +65,22 @@ with col1:
 
     st.write(f"**{len(results)} articoli trovati**")
 
-    # --- MOSTRA TAG DI FILTRO ---
+    # TAG IN LINEA (no a capo)
     for field in ['categoria', 'tipologia', 'provenienza']:
-        st.write(f"**Filtra {field}:**")
         unique_values = sorted(results[field].dropna().unique())
+        tags_html = ""
         for val in unique_values:
-            if st.button(f"❌ {val}", key=f"filter_{field}_{val}"):
-                st.session_state["active_filters"][field].add(val)
-        if st.session_state["active_filters"][field]:
-            st.write("Filtri esclusi: ", ", ".join(st.session_state["active_filters"][field]))
+            tags_html += f"<button style='display:inline-block;margin:3px;padding:4px 8px;background:#eee;border:none;border-radius:6px;cursor:pointer;' onclick='window.location.reload()'>{val}</button>"
+        if tags_html:
+            st.markdown(f"**Filtra {field}:**<br>{tags_html}", unsafe_allow_html=True)
 
-    # --- TABELLA RISULTATI ---
+    # Mostra risultati tabellari
     if not results.empty:
-        st.dataframe(results, use_container_width=True)
+        st.dataframe(results[['codice','prodotto','categoria','tipologia','provenienza','prezzo']], use_container_width=True)
     else:
         st.warning("Nessun articolo trovato.")
 
-    # --- CHECKBOX PER SELEZIONE ---
+    # Checkbox selezione
     st.write("**Seleziona prodotti:**")
     all_indices = results.index.tolist()
     select_all = st.checkbox("Seleziona tutti", value=False, key="select_all")
@@ -116,9 +109,6 @@ with col1:
         st.session_state["selected_rows"].clear()
         st.success("Prodotti aggiunti al paniere.")
 
-# ===========================
-# COLONNA DESTRA: PANIERE
-# ===========================
 with col2:
     st.header("🛒 Paniere")
     paniere_df = pd.DataFrame(st.session_state["paniere"])
