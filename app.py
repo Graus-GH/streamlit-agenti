@@ -9,7 +9,7 @@ from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 # --- CONFIGURAZIONE ---
 st.set_page_config(page_title="Ricerca articoli - Agenti", layout="wide")
 
-# --- FUNZIONE PER DEDUPLICARE LE COLONNE ---
+# --- DEDUPLICA COLONNE ---
 def make_unique_columns(columns):
     seen = {}
     new_cols = []
@@ -47,10 +47,8 @@ df = load_data()
 # --- SESSION STATE ---
 if "paniere" not in st.session_state:
     st.session_state["paniere"] = []
-if "active_filters" not in st.session_state:
-    st.session_state["active_filters"] = {"categoria": set(), "tipologia": set(), "provenienza": set()}
 
-# --- FUNZIONE DI RICERCA FUZZY ---
+# --- RICERCA FUZZY ---
 def fuzzy_filter(df, query, threshold=50):
     if not query:
         return df
@@ -59,13 +57,6 @@ def fuzzy_filter(df, query, threshold=50):
         for value in row[['codice', 'prodotto', 'categoria', 'tipologia', 'provenienza']]
     ), axis=1)
     return df[mask]
-
-# --- FILTRI SU TAG ---
-def apply_tag_filters(df):
-    for field, excluded in st.session_state["active_filters"].items():
-        if excluded:
-            df = df[~df[field].isin(excluded)]
-    return df
 
 # --- LAYOUT ---
 col1, col2 = st.columns([2, 1])
@@ -77,24 +68,8 @@ with col1:
     st.header("🔍 Ricerca articoli")
     query = st.text_input("Cerca prodotto, codice, categoria, tipologia, provenienza:")
     results = fuzzy_filter(df, query)
-    results = apply_tag_filters(results)
-
-    if query:  # Mostra tag solo se c'è una ricerca
-        for field in ['categoria', 'tipologia', 'provenienza']:
-            unique_values = sorted(results[field].dropna().unique())
-            if unique_values:
-                st.markdown(f"**Filtra {field} (clic per escludere):**")
-                cols = st.columns(len(unique_values))
-                for idx, val in enumerate(unique_values):
-                    if cols[idx].button(val, key=f"{field}_{val}"):
-                        st.session_state["active_filters"][field].add(val)
-        for field in st.session_state["active_filters"]:
-            if st.session_state["active_filters"][field]:
-                st.write(f"**Esclusi {field}:** {', '.join(st.session_state['active_filters'][field])}")
-
     st.write(f"**{len(results)} articoli trovati**")
 
-    # --- TABELLA INTERATTIVA CON SELEZIONE ---
     if not results.empty:
         gb = GridOptionsBuilder.from_dataframe(results[['codice', 'prodotto', 'categoria', 'tipologia', 'provenienza', 'prezzo']])
         gb.configure_selection('multiple', use_checkbox=True)
