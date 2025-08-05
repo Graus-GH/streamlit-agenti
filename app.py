@@ -50,8 +50,8 @@ if "paniere" not in st.session_state:
 
 # --- RICERCA FUZZY ---
 def fuzzy_filter(df, query, threshold=50):
-    if not query:
-        return df
+    if not query or query.strip() == "":
+        return pd.DataFrame(columns=df.columns)  # restituisce vuoto se non c'è query
     mask = df.apply(lambda row: any(
         fuzz.partial_ratio(str(value).lower(), query.lower()) >= threshold
         for value in row[['codice', 'prodotto', 'categoria', 'tipologia', 'provenienza']]
@@ -68,9 +68,11 @@ with col1:
     st.header("🔍 Ricerca articoli")
     query = st.text_input("Cerca prodotto, codice, categoria, tipologia, provenienza:")
     results = fuzzy_filter(df, query)
-    st.write(f"**{len(results)} articoli trovati**")
 
-    if not results.empty:
+    if query and not results.empty:
+        st.write(f"**{len(results)} articoli trovati**")
+
+        # --- TABELLA INTERATTIVA ---
         gb = GridOptionsBuilder.from_dataframe(results[['codice', 'prodotto', 'categoria', 'tipologia', 'provenienza', 'prezzo']])
         gb.configure_selection('multiple', use_checkbox=True)
         gb.configure_pagination(paginationAutoPageSize=True)
@@ -91,8 +93,10 @@ with col1:
                 if prodotto not in st.session_state["paniere"]:
                     st.session_state["paniere"].append(prodotto)
             st.success(f"{len(selected_rows)} prodotti aggiunti al paniere.")
-    else:
+    elif query:
         st.warning("Nessun articolo trovato.")
+    else:
+        st.info("Digita un testo per cercare articoli.")
 
 # ===========================
 # COLONNA DESTRA: PANIERE
