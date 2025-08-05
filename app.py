@@ -4,8 +4,9 @@ from io import BytesIO
 import xlsxwriter
 from fpdf import FPDF
 from rapidfuzz import fuzz
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 
-# --- CONFIGURAZIONE PAGINA ---
+# --- CONFIGURAZIONE ---
 st.set_page_config(page_title="Ricerca articoli - Agenti", layout="wide")
 
 # --- FUNZIONE PER DEDUPLICARE LE COLONNE ---
@@ -37,11 +38,7 @@ def load_data():
     }
     df = df.rename(columns=mapping)
     df = df[list(mapping.values())]
-
-    # Codice prodotto numerico senza decimali
     df['codice'] = pd.to_numeric(df['codice'], errors='coerce').fillna(0).astype(int)
-
-    # Deduplica eventuali colonne duplicate
     df.columns = make_unique_columns(df.columns)
     return df
 
@@ -50,8 +47,6 @@ df = load_data()
 # --- SESSION STATE ---
 if "paniere" not in st.session_state:
     st.session_state["paniere"] = []
-if "selected_rows" not in st.session_state:
-    st.session_state["selected_rows"] = set()
 if "active_filters" not in st.session_state:
     st.session_state["active_filters"] = {"categoria": set(), "tipologia": set(), "provenienza": set()}
 
@@ -65,7 +60,7 @@ def fuzzy_filter(df, query, threshold=50):
     ), axis=1)
     return df[mask]
 
-# --- APPLICA FILTRI TAG ---
+# --- FILTRI SU TAG ---
 def apply_tag_filters(df):
     for field, excluded in st.session_state["active_filters"].items():
         if excluded:
@@ -84,58 +79,45 @@ with col1:
     results = fuzzy_filter(df, query)
     results = apply_tag_filters(results)
 
+    if query:  # Mostra tag solo se c'è una ricerca
+        for field in ['categoria', 'tipologia', 'provenienza']:
+            unique_values = sorted(results[field].dropna().unique())
+            if unique_values:
+                st.markdown(f"**Filtra {field} (clic per escludere):**")
+                cols = st.columns(len(unique_values))
+                for idx, val in enumerate(unique_values):
+                    if cols[idx].button(val, key=f"{field}_{val}"):
+                        st.session_state["active_filters"][field].add(val)
+        for field in st.session_state["active_filters"]:
+            if st.session_state["active_filters"][field]:
+                st.write(f"**Esclusi {field}:** {', '.join(st.session_state['active_filters'][field])}")
+
     st.write(f"**{len(results)} articoli trovati**")
 
-    # --- TAG ORIZZONTALI PER FILTRO ---
-    for field in ['categoria', 'tipologia', 'provenienza']:
-        unique_values = sorted(results[field].dropna().unique())
-        if unique_values:
-            st.markdown(f"**Filtra {field} (clic per escludere):**", unsafe_allow_html=True)
-            tag_html = ""
-            for val in unique_values:
-                tag_html += f"""
-                <button style='display:inline-block;margin:3px;padding:4px 8px;background:#eee;
-                border:none;border-radius:6px;cursor:pointer;' 
-                onclick="window.location.href='?exclude={field}:{val}'">{val}</button>
-                """
-            st.markdown(tag_html, unsafe_allow_html=True)
-        if st.session_state["active_filters"][field]:
-            st.write("**Esclusi:** " + ", ".join(st.session_state["active_filters"][field]))
-
-    # --- RISULTATI TABELLA ---
+    # --- TABELLA INTERATTIVA CON SELEZIONE ---
     if not results.empty:
-        st.dataframe(results[['codice', 'prodotto', 'categoria', 'tipologia', 'provenienza', 'prezzo']], use_container_width=True)
+        gb = GridOptionsBuilder.from_dataframe(results[['codice', 'prodotto', 'categoria', 'tipologia', 'provenienza', 'prezzo']])
+        gb.configure_selection('multiple', use_checkbox=True)
+        gb.configure_pagination(paginationAutoPageSize=True)
+        grid_options = gb.build()
+
+        grid_response = AgGrid(
+            results,
+            gridOptions=grid_options,
+            update_mode=GridUpdateMode.SELECTION_CHANGED,
+            theme="balham",
+            fit_columns_on_grid_load=True,
+            use_container_width=True
+        )
+        selected_rows = grid_response['selected_rows']
+
+        if st.button("➕ Aggiungi selezionati al paniere") and selected_rows:
+            for prodotto in selected_rows:
+                if prodotto not in st.session_state["paniere"]:
+                    st.session_state["paniere"].append(prodotto)
+            st.success(f"{len(selected_rows)} prodotti aggiunti al paniere.")
     else:
         st.warning("Nessun articolo trovato.")
-
-    # --- CHECKBOX PER SELEZIONE ---
-    st.write("**Seleziona prodotti:**")
-    all_indices = results.index.tolist()
-    select_all = st.checkbox("Seleziona tutti", value=False, key="select_all")
-
-    if select_all:
-        st.session_state["selected_rows"] = set(all_indices)
-    else:
-        st.session_state["selected_rows"].intersection_update(all_indices)
-
-    for i, row in results.iterrows():
-        checked = st.checkbox(
-            f"{row['codice']} - {row['prodotto']} ({row['prezzo']})",
-            value=i in st.session_state["selected_rows"],
-            key=f"check_{i}"
-        )
-        if checked:
-            st.session_state["selected_rows"].add(i)
-        else:
-            st.session_state["selected_rows"].discard(i)
-
-    if st.button("➕ Aggiungi selezionati al paniere"):
-        for i in st.session_state["selected_rows"]:
-            prodotto = results.loc[i].to_dict()
-            if prodotto not in st.session_state["paniere"]:
-                st.session_state["paniere"].append(prodotto)
-        st.session_state["selected_rows"].clear()
-        st.success("Prodotti aggiunti al paniere.")
 
 # ===========================
 # COLONNA DESTRA: PANIERE
