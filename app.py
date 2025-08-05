@@ -85,15 +85,15 @@ with col1:
         )
         selected_rows = grid_response['selected_rows']
 
-if st.button("➕ Aggiungi selezionati al paniere"):
-    if selected_rows and len(selected_rows) > 0:
-        for prodotto in selected_rows:
-            if prodotto not in st.session_state["paniere"]:
-                st.session_state["paniere"].append(prodotto)
-        st.success(f"{len(selected_rows)} prodotti aggiunti al paniere.")
-    else:
-        st.warning("Nessun prodotto selezionato.")
-
+        # --- AGGIUNGI AL PANIERE ---
+        if st.button("➕ Aggiungi selezionati al paniere"):
+            if selected_rows and len(selected_rows) > 0:
+                for prodotto in selected_rows:
+                    if prodotto not in st.session_state["paniere"]:
+                        st.session_state["paniere"].append(prodotto)
+                st.success(f"{len(selected_rows)} prodotti aggiunti al paniere.")
+            else:
+                st.warning("Nessun prodotto selezionato.")
     elif query:
         st.warning("Nessun articolo trovato.")
     else:
@@ -138,4 +138,3 @@ with col2:
 
         pdf_data = create_pdf(paniere_df)
         st.download_button("⬇️ Scarica PDF", pdf_data, "paniere.pdf")
-
