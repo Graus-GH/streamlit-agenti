@@ -3,8 +3,9 @@ import pandas as pd
 from io import BytesIO
 import xlsxwriter
 from fpdf import FPDF
+from rapidfuzz import fuzz
 
-# --- CONFIGURAZIONE PAGINA ---
+# --- CONFIGURAZIONE ---
 st.set_page_config(page_title="Ricerca articoli - Agenti", layout="wide")
 
 # --- CARICA DATI ---
@@ -23,6 +24,10 @@ def load_data():
     }
     df = df.rename(columns=mapping)
     df = df[list(mapping.values())]
+
+    # Converte il codice in numerico senza decimali
+    df['codice'] = pd.to_numeric(df['codice'], errors='coerce').fillna(0).astype(int)
+
     return df
 
 df = load_data()
@@ -32,6 +37,25 @@ if "paniere" not in st.session_state:
     st.session_state["paniere"] = []
 if "selected_rows" not in st.session_state:
     st.session_state["selected_rows"] = set()
+if "active_filters" not in st.session_state:
+    st.session_state["active_filters"] = {"categoria": set(), "tipologia": set(), "provenienza": set()}
+
+# --- FUNZIONE DI RICERCA FUZZY ---
+def fuzzy_filter(df, query, threshold=50):
+    if not query:
+        return df
+    mask = df.apply(lambda row: any(
+        fuzz.partial_ratio(str(value).lower(), query.lower()) >= threshold
+        for value in row[['codice', 'prodotto', 'categoria', 'tipologia', 'provenienza']]
+    ), axis=1)
+    return df[mask]
+
+# --- FILTRO SU TAG ATTIVI ---
+def apply_tag_filters(df):
+    for field, excluded in st.session_state["active_filters"].items():
+        if excluded:
+            df = df[~df[field].isin(excluded)]
+    return df
 
 # --- LAYOUT A DUE COLONNE ---
 col1, col2 = st.columns([2, 1])
@@ -42,16 +66,28 @@ col1, col2 = st.columns([2, 1])
 with col1:
     st.header("🔍 Ricerca articoli")
     query = st.text_input("Cerca prodotto, codice, categoria, tipologia, provenienza:")
-
-    if query:
-        mask = df.apply(lambda row: query.lower() in row.astype(str).str.lower().to_string(), axis=1)
-        results = df[mask]
-    else:
-        results = df.copy()
+    results = fuzzy_filter(df, query)
+    results = apply_tag_filters(results)
 
     st.write(f"**{len(results)} articoli trovati**")
 
-    # Tabella con checkbox
+    # --- MOSTRA TAG DI FILTRO ---
+    for field in ['categoria', 'tipologia', 'provenienza']:
+        st.write(f"**Filtra {field}:**")
+        unique_values = sorted(results[field].dropna().unique())
+        for val in unique_values:
+            if st.button(f"❌ {val}", key=f"filter_{field}_{val}"):
+                st.session_state["active_filters"][field].add(val)
+        if st.session_state["active_filters"][field]:
+            st.write("Filtri esclusi: ", ", ".join(st.session_state["active_filters"][field]))
+
+    # --- TABELLA RISULTATI ---
+    if not results.empty:
+        st.dataframe(results, use_container_width=True)
+    else:
+        st.warning("Nessun articolo trovato.")
+
+    # --- CHECKBOX PER SELEZIONE ---
     st.write("**Seleziona prodotti:**")
     all_indices = results.index.tolist()
     select_all = st.checkbox("Seleziona tutti", value=False, key="select_all")
