@@ -7,13 +7,22 @@ from fpdf import FPDF
 # --- CONFIGURAZIONE PAGINA ---
 st.set_page_config(page_title="Ricerca articoli - Agenti", layout="wide")
 
-# --- CARICA DATI DA GOOGLE SHEETS ---
+# --- CARICA DATI DA GOOGLE SHEETS (robusta agli spazi e maiuscole) ---
 @st.cache_data
 def load_data():
     url = "https://docs.google.com/spreadsheets/d/10BFJQTV1yL69cotE779zuR8vtG5NqKWOVH0Uv1AnGaw/export?format=csv&gid=707323537"
     df = pd.read_csv(url)
-    df = df[['Codice', 'Descrizione', 'Categoria', 'Tipologia', 'Provenienza', 'Prezzo']]
-    df.columns = ['codice', 'prodotto', 'categoria', 'tipologia', 'provenienza', 'prezzo']
+    df.columns = df.columns.str.strip().str.lower()  # normalizza nomi colonne
+    mapping = {
+        'codice articolo': 'codice',
+        'nuova descrizione': 'prodotto',
+        'reparto': 'categoria',
+        'sottoreparto': 'tipologia',
+        'altro reparto': 'provenienza',
+        'prezzo': 'prezzo'
+    }
+    df = df.rename(columns=mapping)
+    df = df[list(mapping.values())]  # mantieni solo le colonne utili
     return df
 
 df = load_data()
