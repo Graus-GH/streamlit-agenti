@@ -5,8 +5,23 @@ import xlsxwriter
 from fpdf import FPDF
 from rapidfuzz import fuzz
 
+# --- CONFIGURAZIONE PAGINA ---
 st.set_page_config(page_title="Ricerca articoli - Agenti", layout="wide")
 
+# --- FUNZIONE PER DEDUPLICARE LE COLONNE ---
+def make_unique_columns(columns):
+    seen = {}
+    new_cols = []
+    for col in columns:
+        if col in seen:
+            seen[col] += 1
+            new_cols.append(f"{col}_{seen[col]}")
+        else:
+            seen[col] = 0
+            new_cols.append(col)
+    return new_cols
+
+# --- CARICA DATI ---
 @st.cache_data
 def load_data():
     url = "https://docs.google.com/spreadsheets/d/10BFJQTV1yL69cotE779zuR8vtG5NqKWOVH0Uv1AnGaw/export?format=csv&gid=707323537"
@@ -26,13 +41,13 @@ def load_data():
     # Codice prodotto numerico senza decimali
     df['codice'] = pd.to_numeric(df['codice'], errors='coerce').fillna(0).astype(int)
 
-    # Forza nomi colonne univoci (fix per duplicate names)
-    df.columns = pd.io.parsers.ParserBase({'names': df.columns})._maybe_dedup_names(df.columns)
-
+    # Deduplica eventuali colonne duplicate
+    df.columns = make_unique_columns(df.columns)
     return df
 
 df = load_data()
 
+# --- SESSION STATE ---
 if "paniere" not in st.session_state:
     st.session_state["paniere"] = []
 if "selected_rows" not in st.session_state:
@@ -40,6 +55,7 @@ if "selected_rows" not in st.session_state:
 if "active_filters" not in st.session_state:
     st.session_state["active_filters"] = {"categoria": set(), "tipologia": set(), "provenienza": set()}
 
+# --- FUNZIONE DI RICERCA FUZZY ---
 def fuzzy_filter(df, query, threshold=50):
     if not query:
         return df
@@ -49,14 +65,19 @@ def fuzzy_filter(df, query, threshold=50):
     ), axis=1)
     return df[mask]
 
+# --- APPLICA FILTRI TAG ---
 def apply_tag_filters(df):
     for field, excluded in st.session_state["active_filters"].items():
         if excluded:
             df = df[~df[field].isin(excluded)]
     return df
 
+# --- LAYOUT ---
 col1, col2 = st.columns([2, 1])
 
+# ===========================
+# COLONNA SINISTRA: RICERCA
+# ===========================
 with col1:
     st.header("🔍 Ricerca articoli")
     query = st.text_input("Cerca prodotto, codice, categoria, tipologia, provenienza:")
@@ -65,22 +86,29 @@ with col1:
 
     st.write(f"**{len(results)} articoli trovati**")
 
-    # TAG IN LINEA (no a capo)
+    # --- TAG ORIZZONTALI PER FILTRO ---
     for field in ['categoria', 'tipologia', 'provenienza']:
         unique_values = sorted(results[field].dropna().unique())
-        tags_html = ""
-        for val in unique_values:
-            tags_html += f"<button style='display:inline-block;margin:3px;padding:4px 8px;background:#eee;border:none;border-radius:6px;cursor:pointer;' onclick='window.location.reload()'>{val}</button>"
-        if tags_html:
-            st.markdown(f"**Filtra {field}:**<br>{tags_html}", unsafe_allow_html=True)
+        if unique_values:
+            st.markdown(f"**Filtra {field} (clic per escludere):**", unsafe_allow_html=True)
+            tag_html = ""
+            for val in unique_values:
+                tag_html += f"""
+                <button style='display:inline-block;margin:3px;padding:4px 8px;background:#eee;
+                border:none;border-radius:6px;cursor:pointer;' 
+                onclick="window.location.href='?exclude={field}:{val}'">{val}</button>
+                """
+            st.markdown(tag_html, unsafe_allow_html=True)
+        if st.session_state["active_filters"][field]:
+            st.write("**Esclusi:** " + ", ".join(st.session_state["active_filters"][field]))
 
-    # Mostra risultati tabellari
+    # --- RISULTATI TABELLA ---
     if not results.empty:
-        st.dataframe(results[['codice','prodotto','categoria','tipologia','provenienza','prezzo']], use_container_width=True)
+        st.dataframe(results[['codice', 'prodotto', 'categoria', 'tipologia', 'provenienza', 'prezzo']], use_container_width=True)
     else:
         st.warning("Nessun articolo trovato.")
 
-    # Checkbox selezione
+    # --- CHECKBOX PER SELEZIONE ---
     st.write("**Seleziona prodotti:**")
     all_indices = results.index.tolist()
     select_all = st.checkbox("Seleziona tutti", value=False, key="select_all")
@@ -109,6 +137,9 @@ with col1:
         st.session_state["selected_rows"].clear()
         st.success("Prodotti aggiunti al paniere.")
 
+# ===========================
+# COLONNA DESTRA: PANIERE
+# ===========================
 with col2:
     st.header("🛒 Paniere")
     paniere_df = pd.DataFrame(st.session_state["paniere"])
