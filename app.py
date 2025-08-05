@@ -38,6 +38,7 @@ def load_data():
     df = df.rename(columns=mapping)
     df = df[list(mapping.values())]
     df['codice'] = pd.to_numeric(df['codice'], errors='coerce').fillna(0).astype(int)
+    df['prezzo'] = pd.to_numeric(df['prezzo'], errors='coerce').fillna(0)
     df.columns = make_unique_columns(df.columns)
     return df
 
@@ -50,10 +51,16 @@ if "paniere" not in st.session_state:
 # --- RICERCA "CONTAINS" ---
 def search_filter(df, query):
     if not query or query.strip() == "":
-        return pd.DataFrame(columns=df.columns)  # Nessun risultato se query vuota
+        return pd.DataFrame(columns=df.columns)
     query = query.lower()
     mask = df.apply(lambda row: any(query in str(value).lower() for value in row[['codice', 'prodotto', 'categoria', 'tipologia', 'provenienza']]), axis=1)
     return df[mask]
+
+# --- SIDEBAR: FILTRO PREZZO ---
+st.sidebar.header("Filtri")
+min_price = float(df['prezzo'].min())
+max_price = float(df['prezzo'].max())
+price_range = st.sidebar.slider("Filtra per prezzo (€)", min_value=min_price, max_value=max_price, value=(min_price, max_price))
 
 # --- LAYOUT ---
 col1, col2 = st.columns([2, 1])
@@ -65,6 +72,7 @@ with col1:
     st.header("🔍 Ricerca articoli")
     query = st.text_input("Cerca prodotto, codice, categoria, tipologia, provenienza:")
     results = search_filter(df, query)
+    results = results[(results['prezzo'] >= price_range[0]) & (results['prezzo'] <= price_range[1])]
 
     if query and not results.empty:
         st.write(f"**{len(results)} articoli trovati**")
@@ -96,6 +104,8 @@ with col1:
                     if prodotto not in st.session_state["paniere"]:
                         st.session_state["paniere"].append(prodotto)
                 st.success(f"{len(selected_rows)} prodotti aggiunti al paniere.")
+                # Reset selezione
+                st.experimental_rerun()
             else:
                 st.warning("Nessun prodotto selezionato.")
     elif query:
