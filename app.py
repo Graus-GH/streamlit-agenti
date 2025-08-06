@@ -26,9 +26,9 @@ def load_data():
     url = "https://docs.google.com/spreadsheets/d/10BFJQTV1yL69cotE779zuR8vtG5NqKWOVH0Uv1AnGaw/export?format=csv&gid=707323537"
     df = pd.read_csv(url)
     df.columns = df.columns.str.strip().str.lower()
-    df.columns = make_unique_columns(df.columns)  # <-- colonne uniche
+    df.columns = make_unique_columns(df.columns)  # colonne uniche
 
-    # Individua la prima colonna che contiene questi campi
+    # Individua colonne
     def find_col(name):
         for col in df.columns:
             if col.startswith(name):
@@ -42,12 +42,10 @@ def load_data():
     col_provenienza = find_col('altro reparto') or find_col('provenienza')
     col_prezzo = find_col('prezzo')
 
-    # Prendi solo le colonne trovate
     cols = [c for c in [col_codice, col_prodotto, col_categoria, col_tipologia, col_provenienza, col_prezzo] if c]
     df = df[cols]
     df.columns = ['codice', 'prodotto', 'categoria', 'tipologia', 'provenienza', 'prezzo'][:len(df.columns)]
 
-    # Conversione numerica
     if 'codice' in df.columns:
         df['codice'] = pd.to_numeric(df['codice'], errors='coerce').fillna(0).astype(int)
     if 'prezzo' in df.columns:
@@ -67,7 +65,7 @@ def search_filter(df, query):
     mask = df.apply(lambda row: any(query in str(value).lower() for value in row if pd.notna(value)), axis=1)
     return df[mask]
 
-# --- SIDEBAR: FILTRO PREZZO (DINAMICO) ---
+# --- SIDEBAR: FILTRO PREZZO (DINAMICO + MANUALE) ---
 st.sidebar.header("Filtri")
 query = st.sidebar.text_input("Cerca prodotto, codice, categoria, tipologia, provenienza:")
 results = search_filter(df, query)
@@ -80,6 +78,9 @@ else:
     max_price = 0
 
 price_range = st.sidebar.slider("Filtra per prezzo (€)", min_value=min_price, max_value=max_price, value=(min_price, max_price))
+manual_min = st.sidebar.number_input("Prezzo minimo", min_value=min_price, max_value=max_price, value=price_range[0])
+manual_max = st.sidebar.number_input("Prezzo massimo", min_value=min_price, max_value=max_price, value=price_range[1])
+price_range = (manual_min, manual_max)
 results = results[(results['prezzo'] >= price_range[0]) & (results['prezzo'] <= price_range[1])]
 
 # --- LAYOUT ---
@@ -93,6 +94,19 @@ with col1:
     if not results.empty:
         st.write(f"**{len(results)} articoli trovati**")
 
+        # --- PULSANTE IN ALTO ---
+        if st.button("➕ Aggiungi selezionati al paniere"):
+            selected_rows = st.session_state.get('last_selection', [])
+            if selected_rows and len(selected_rows) > 0:
+                for prodotto in selected_rows:
+                    if prodotto not in st.session_state["paniere"]:
+                        st.session_state["paniere"].append(prodotto)
+                st.success(f"{len(selected_rows)} prodotti aggiunti al paniere.")
+                st.session_state['last_selection'] = []  # deselezione
+            else:
+                st.warning("Nessun prodotto selezionato.")
+
+        # --- TABELLA RISULTATI ---
         gb = GridOptionsBuilder.from_dataframe(results)
         gb.configure_selection('multiple', use_checkbox=True)
         gb.configure_pagination(enabled=False)
@@ -108,18 +122,9 @@ with col1:
             use_container_width=True
         )
 
-        selected_rows = grid_response['selected_rows']
-        if isinstance(selected_rows, pd.DataFrame):
-            selected_rows = selected_rows.to_dict(orient="records")
+        # Salva selezione in sessione per deselezionare dopo
+        st.session_state['last_selection'] = grid_response['selected_rows']
 
-        if st.button("➕ Aggiungi selezionati al paniere"):
-            if selected_rows and len(selected_rows) > 0:
-                for prodotto in selected_rows:
-                    if prodotto not in st.session_state["paniere"]:
-                        st.session_state["paniere"].append(prodotto)
-                st.success(f"{len(selected_rows)} prodotti aggiunti al paniere.")
-            else:
-                st.warning("Nessun prodotto selezionato.")
     elif query:
         st.warning("Nessun articolo trovato.")
     else:
@@ -151,6 +156,6 @@ with col2:
             st.success("Prodotti rimossi.")
 
         # Totale paniere
-        st.markdown(f"**Totale: {paniere_df['prezzo'].sum():.2f} €**")
+        st.markdown(f"**Totale: {paniere_df['prezzo'].sum():.2f} €** ({len(paniere_df)} articoli)")
     else:
         st.info("Il paniere è vuoto.")
