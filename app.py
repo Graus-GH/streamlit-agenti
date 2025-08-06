@@ -7,6 +7,20 @@ from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 
 st.set_page_config(page_title="Ricerca articoli - Agenti", layout="wide")
 
+# --- DEDUPLICA NOMI COLONNE ---
+def make_unique_columns(columns):
+    seen = {}
+    new_cols = []
+    for col in columns:
+        if col in seen:
+            seen[col] += 1
+            new_cols.append(f"{col}_{seen[col]}")
+        else:
+            seen[col] = 0
+            new_cols.append(col)
+    return new_cols
+
+# --- CARICA DATI ---
 @st.cache_data
 def load_data():
     url = "https://docs.google.com/spreadsheets/d/10BFJQTV1yL69cotE779zuR8vtG5NqKWOVH0Uv1AnGaw/export?format=csv&gid=707323537"
@@ -24,6 +38,7 @@ def load_data():
     df = df[list(mapping.values())]
     df['codice'] = pd.to_numeric(df['codice'], errors='coerce').fillna(0).astype(int)
     df['prezzo'] = pd.to_numeric(df['prezzo'], errors='coerce').fillna(0)
+    df.columns = make_unique_columns(df.columns)  # <-- Unicità
     return df
 
 df = load_data()
@@ -31,6 +46,7 @@ df = load_data()
 if "paniere" not in st.session_state:
     st.session_state["paniere"] = []
 
+# --- RICERCA ---
 def search_filter(df, query):
     if not query or query.strip() == "":
         return pd.DataFrame(columns=df.columns)
@@ -38,38 +54,38 @@ def search_filter(df, query):
     mask = df.apply(lambda row: any(query in str(value).lower() for value in row[['codice', 'prodotto', 'categoria', 'tipologia', 'provenienza']]), axis=1)
     return df[mask]
 
-# ===========================
-# RICERCA
-# ===========================
-st.header("🔍 Ricerca articoli")
-query = st.text_input("Cerca prodotto, codice, categoria, tipologia, provenienza:")
-results = search_filter(df, query)
+# --- SIDEBAR: FILTRO PREZZI ---
+st.sidebar.header("Filtri")
+min_price = float(df['prezzo'].min())
+max_price = float(df['prezzo'].max())
+price_range = st.sidebar.slider("Filtra per prezzo (€)", min_value=min_price, max_value=max_price, value=(min_price, max_price))
 
-# --- filtro prezzi dinamico sui risultati ---
-if not results.empty:
-    min_price = float(results['prezzo'].min())
-    max_price = float(results['prezzo'].max())
-else:
-    min_price = 0
-    max_price = 0
-
+# --- LAYOUT ---
 col1, col2 = st.columns([2.5, 1])
 
+# ===========================
+# COLONNA SINISTRA: RICERCA
+# ===========================
 with col1:
-    if not results.empty:
-        price_range = st.slider("Filtra per prezzo (€)", min_value=min_price, max_value=max_price, value=(min_price, max_price))
-        results = results[(results['prezzo'] >= price_range[0]) & (results['prezzo'] <= price_range[1])]
+    st.header("🔍 Ricerca articoli")
+    query = st.text_input("Cerca prodotto, codice, categoria, tipologia, provenienza:")
+    results = search_filter(df, query)
+    results = results[(results['prezzo'] >= price_range[0]) & (results['prezzo'] <= price_range[1])]
+
+    if query and not results.empty:
         st.write(f"**{len(results)} articoli trovati**")
 
         # --- TABELLA RISULTATI ---
-        gb = GridOptionsBuilder.from_dataframe(results[['codice', 'prodotto', 'categoria', 'tipologia', 'provenienza', 'prezzo']])
+        vis_cols = ['codice', 'prodotto', 'categoria', 'tipologia', 'provenienza', 'prezzo']
+        results = results[vis_cols]  # solo colonne necessarie
+        gb = GridOptionsBuilder.from_dataframe(results)
         gb.configure_selection('multiple', use_checkbox=True)
         gb.configure_pagination(enabled=False)
         gb.configure_column("prodotto", width=400)
         grid_options = gb.build()
 
         grid_response = AgGrid(
-            results[['codice', 'prodotto', 'categoria', 'tipologia', 'provenienza', 'prezzo']],
+            results,
             gridOptions=grid_options,
             update_mode=GridUpdateMode.SELECTION_CHANGED,
             theme="balham",
@@ -95,7 +111,7 @@ with col1:
         st.info("Digita un testo per cercare articoli.")
 
 # ===========================
-# PANIERE
+# COLONNA DESTRA: PANIERE
 # ===========================
 with col2:
     st.header("🛒 Paniere")
