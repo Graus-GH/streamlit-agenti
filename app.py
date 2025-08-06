@@ -60,10 +60,19 @@ def search_filter(df, query):
 st.sidebar.header("Filtri")
 min_price = float(df['prezzo'].min())
 max_price = float(df['prezzo'].max())
+
+# Slider
 price_range = st.sidebar.slider("Filtra per prezzo (€)", min_value=min_price, max_value=max_price, value=(min_price, max_price))
 
+# Input manuale
+manual_min = st.sidebar.number_input("Prezzo minimo (€)", min_value=min_price, max_value=max_price, value=price_range[0])
+manual_max = st.sidebar.number_input("Prezzo massimo (€)", min_value=min_price, max_value=max_price, value=price_range[1])
+
+# Usa input manuale se modificato
+price_range = (manual_min, manual_max)
+
 # --- LAYOUT ---
-col1, col2 = st.columns([2, 1])
+col1, col2 = st.columns([2.5, 1])
 
 # ===========================
 # COLONNA SINISTRA: RICERCA
@@ -80,19 +89,19 @@ with col1:
         # --- TABELLA INTERATTIVA ---
         gb = GridOptionsBuilder.from_dataframe(results[['codice', 'prodotto', 'categoria', 'tipologia', 'provenienza', 'prezzo']])
         gb.configure_selection('multiple', use_checkbox=True)
-        gb.configure_pagination(paginationAutoPageSize=True)
+        gb.configure_pagination(enabled=False)  # Mostra tutti i risultati
+        gb.configure_column("prodotto", width=400)  # Colonna prodotto più larga
         grid_options = gb.build()
 
         grid_response = AgGrid(
-            results,
+            results[['codice', 'prodotto', 'categoria', 'tipologia', 'provenienza', 'prezzo']],
             gridOptions=grid_options,
             update_mode=GridUpdateMode.SELECTION_CHANGED,
             theme="balham",
-            fit_columns_on_grid_load=True,
+            fit_columns_on_grid_load=False,
             use_container_width=True
         )
 
-        # Converte in lista di dizionari
         selected_rows = grid_response['selected_rows']
         if isinstance(selected_rows, pd.DataFrame):
             selected_rows = selected_rows.to_dict(orient="records")
@@ -104,8 +113,6 @@ with col1:
                     if prodotto not in st.session_state["paniere"]:
                         st.session_state["paniere"].append(prodotto)
                 st.success(f"{len(selected_rows)} prodotti aggiunti al paniere.")
-                # Reset selezione
-                st.experimental_rerun()
             else:
                 st.warning("Nessun prodotto selezionato.")
     elif query:
