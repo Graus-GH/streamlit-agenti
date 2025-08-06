@@ -14,22 +14,29 @@ def load_data():
     df = pd.read_csv(url)
     df.columns = df.columns.str.strip()
 
-    # Usa esattamente le intestazioni come in Google Sheet
-    required_cols = {
-        'codice articolo': 'codice',
-        'nuova descrizione': 'prodotto',
-        'reparto': 'categoria',
-        'sottoreparto': 'tipologia',
-        'altro reparto': 'provenienza',
-        'prezzo': 'prezzo'
+    # Mappiamo solo le colonne che ci servono
+    mapping = {
+        'Codice Articolo': 'codice',
+        'Nuova Descrizione': 'prodotto',
+        'Reparto': 'categoria',
+        'Sottoreparto': 'tipologia',
+        'Altro Reparto': 'provenienza',
+        'Prezzo': 'prezzo'
     }
-    cols_present = {v: k for k, v in required_cols.items() if k in df.columns}
-    df = df[list(cols_present.keys())]
-    df = df.rename(columns=required_cols)
+    available = {k: v for k, v in mapping.items() if k in df.columns}
+    df = df[list(available.keys())].rename(columns=available)
 
     # Conversioni sicure
-    df['codice'] = pd.to_numeric(df['codice'], errors='coerce').fillna(0).astype(int)
-    df['prezzo'] = pd.to_numeric(df['prezzo'], errors='coerce').fillna(0)
+    if 'codice' in df.columns:
+        df['codice'] = pd.to_numeric(df['codice'], errors='coerce').fillna(0).astype(int)
+    else:
+        df['codice'] = 0
+
+    if 'prezzo' in df.columns:
+        df['prezzo'] = pd.to_numeric(df['prezzo'], errors='coerce').fillna(0)
+    else:
+        df['prezzo'] = 0.0
+
     return df
 
 df = load_data()
@@ -38,7 +45,7 @@ if "paniere" not in st.session_state:
     st.session_state["paniere"] = []
 
 if "grid_key" not in st.session_state:
-    st.session_state["grid_key"] = 0  # per forzare refresh della tabella
+    st.session_state["grid_key"] = 0  # per forzare refresh tabella
 
 # --- RICERCA ---
 def search_filter(df, query):
@@ -48,7 +55,7 @@ def search_filter(df, query):
     mask = df.apply(lambda row: any(query in str(value).lower() for value in row if pd.notna(value)), axis=1)
     return df[mask]
 
-# --- SIDEBAR: FILTRO PREZZO (DINAMICO + MANUALE) ---
+# --- SIDEBAR: FILTRO PREZZO ---
 st.sidebar.header("Filtri")
 query = st.sidebar.text_input("Cerca prodotto, codice, categoria, tipologia, provenienza:")
 results = search_filter(df, query)
@@ -77,8 +84,8 @@ with col1:
     if not results.empty:
         st.write(f"**{len(results)} articoli trovati**")
 
-        # --- PULSANTE IN ALTO (A DESTRA) ---
-        top_left, top_right = st.columns([4, 1])
+        # PULSANTE A DESTRA SOPRA LA TABELLA
+        _, top_right = st.columns([4, 1])
         with top_right:
             if st.button("➕ Aggiungi selezionati"):
                 selected_rows = st.session_state.get('last_selection', [])
@@ -90,11 +97,11 @@ with col1:
                             st.session_state["paniere"].append(prodotto)
                     st.success(f"{len(selected_rows)} prodotti aggiunti.")
                     st.session_state['last_selection'] = []
-                    st.session_state["grid_key"] += 1  # Forza reset selezione
+                    st.session_state["grid_key"] += 1  # reset griglia
                 else:
                     st.warning("Nessun prodotto selezionato.")
 
-        # --- TABELLA RISULTATI ---
+        # TABELLA RISULTATI
         gb = GridOptionsBuilder.from_dataframe(results)
         gb.configure_selection('multiple', use_checkbox=True)
         gb.configure_pagination(enabled=False)
@@ -108,7 +115,7 @@ with col1:
             theme="balham",
             fit_columns_on_grid_load=True,
             use_container_width=True,
-            key=st.session_state["grid_key"]  # forza reset
+            key=st.session_state["grid_key"]
         )
 
         selected_rows = grid_response['selected_rows']
@@ -146,7 +153,6 @@ with col2:
             st.session_state["paniere"] = [p for p in st.session_state["paniere"] if p not in selected_remove]
             st.success("Prodotti rimossi.")
 
-        # Totale paniere
         st.markdown(f"**Totale: {paniere_df['prezzo'].sum():.2f} €** ({len(paniere_df)} articoli)")
     else:
         st.info("Il paniere è vuoto.")
