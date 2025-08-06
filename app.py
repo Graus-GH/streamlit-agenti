@@ -94,17 +94,22 @@ with col1:
     if not results.empty:
         st.write(f"**{len(results)} articoli trovati**")
 
-        # --- PULSANTE IN ALTO ---
-        if st.button("➕ Aggiungi selezionati al paniere"):
-            selected_rows = st.session_state.get('last_selection', [])
-            if selected_rows and len(selected_rows) > 0:
-                for prodotto in selected_rows:
-                    if prodotto not in st.session_state["paniere"]:
-                        st.session_state["paniere"].append(prodotto)
-                st.success(f"{len(selected_rows)} prodotti aggiunti al paniere.")
-                st.session_state['last_selection'] = []  # deselezione
-            else:
-                st.warning("Nessun prodotto selezionato.")
+        # --- PULSANTE IN ALTO (ALLINEATO A SINISTRA) ---
+        left_col, _ = st.columns([1, 5])
+        with left_col:
+            if st.button("➕ Aggiungi selezionati al paniere"):
+                selected_rows = st.session_state.get('last_selection', [])
+                # Sempre lista di dizionari
+                if isinstance(selected_rows, pd.DataFrame):
+                    selected_rows = selected_rows.to_dict(orient="records")
+                if selected_rows and len(selected_rows) > 0:
+                    for prodotto in selected_rows:
+                        if prodotto not in st.session_state["paniere"]:
+                            st.session_state["paniere"].append(prodotto)
+                    st.success(f"{len(selected_rows)} prodotti aggiunti al paniere.")
+                    st.session_state['last_selection'] = []  # deselezione
+                else:
+                    st.warning("Nessun prodotto selezionato.")
 
         # --- TABELLA RISULTATI ---
         gb = GridOptionsBuilder.from_dataframe(results)
@@ -123,7 +128,10 @@ with col1:
         )
 
         # Salva selezione in sessione per deselezionare dopo
-        st.session_state['last_selection'] = grid_response['selected_rows']
+        selected_rows = grid_response['selected_rows']
+        if isinstance(selected_rows, pd.DataFrame):
+            selected_rows = selected_rows.to_dict(orient="records")
+        st.session_state['last_selection'] = selected_rows
 
     elif query:
         st.warning("Nessun articolo trovato.")
