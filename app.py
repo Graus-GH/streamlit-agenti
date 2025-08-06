@@ -7,25 +7,14 @@ from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 
 st.set_page_config(page_title="Ricerca articoli - Agenti", layout="wide")
 
-# --- DEDUPLICA NOMI COLONNE ---
-def make_unique_columns(columns):
-    seen = {}
-    new_cols = []
-    for col in columns:
-        if col in seen:
-            seen[col] += 1
-            new_cols.append(f"{col}_{seen[col]}")
-        else:
-            seen[col] = 0
-            new_cols.append(col)
-    return new_cols
-
 # --- CARICA DATI ---
 @st.cache_data
 def load_data():
     url = "https://docs.google.com/spreadsheets/d/10BFJQTV1yL69cotE779zuR8vtG5NqKWOVH0Uv1AnGaw/export?format=csv&gid=707323537"
     df = pd.read_csv(url)
     df.columns = df.columns.str.strip().str.lower()
+
+    # Mapping solo se le colonne esistono
     mapping = {
         'codice articolo': 'codice',
         'nuova descrizione': 'prodotto',
@@ -34,31 +23,34 @@ def load_data():
         'altro reparto': 'provenienza',
         'prezzo': 'prezzo'
     }
-    df = df.rename(columns=mapping)
-    df = df[list(mapping.values())]
-    df['codice'] = pd.to_numeric(df['codice'], errors='coerce').fillna(0).astype(int)
-    df['prezzo'] = pd.to_numeric(df['prezzo'], errors='coerce').fillna(0)
-    df.columns = make_unique_columns(df.columns)  # <-- Unicità
+    for old, new in mapping.items():
+        if old in df.columns:
+            df.rename(columns={old: new}, inplace=True)
+
+    # Manteniamo solo le colonne utili che esistono
+    keep_cols = [c for c in ['codice', 'prodotto', 'categoria', 'tipologia', 'provenienza', 'prezzo'] if c in df.columns]
+    df = df[keep_cols]
+
+    # Conversione numerica codice e prezzo
+    if 'codice' in df.columns:
+        df['codice'] = pd.to_numeric(df['codice'], errors='coerce').fillna(0).astype(int)
+    if 'prezzo' in df.columns:
+        df['prezzo'] = pd.to_numeric(df['prezzo'], errors='coerce').fillna(0)
     return df
 
 df = load_data()
 
+# --- SESSION STATE ---
 if "paniere" not in st.session_state:
     st.session_state["paniere"] = []
 
 # --- RICERCA ---
 def search_filter(df, query):
     if not query or query.strip() == "":
-        return pd.DataFrame(columns=df.columns)
+        return df
     query = query.lower()
-    mask = df.apply(lambda row: any(query in str(value).lower() for value in row[['codice', 'prodotto', 'categoria', 'tipologia', 'provenienza']]), axis=1)
+    mask = df.apply(lambda row: any(query in str(value).lower() for value in row if pd.notna(value)), axis=1)
     return df[mask]
-
-# --- SIDEBAR: FILTRO PREZZI ---
-st.sidebar.header("Filtri")
-min_price = float(df['prezzo'].min())
-max_price = float(df['prezzo'].max())
-price_range = st.sidebar.slider("Filtra per prezzo (€)", min_value=min_price, max_value=max_price, value=(min_price, max_price))
 
 # --- LAYOUT ---
 col1, col2 = st.columns([2.5, 1])
@@ -70,22 +62,31 @@ with col1:
     st.header("🔍 Ricerca articoli")
     query = st.text_input("Cerca prodotto, codice, categoria, tipologia, provenienza:")
     results = search_filter(df, query)
+
+    # --- filtro prezzi dinamico in sidebar ---
+    if not results.empty and 'prezzo' in results.columns:
+        min_price = float(results['prezzo'].min())
+        max_price = float(results['prezzo'].max())
+    else:
+        min_price = 0
+        max_price = 0
+
+    price_range = st.sidebar.slider("Filtra per prezzo (€)", min_value=min_price, max_value=max_price, value=(min_price, max_price))
     results = results[(results['prezzo'] >= price_range[0]) & (results['prezzo'] <= price_range[1])]
 
-    if query and not results.empty:
+    if not results.empty:
         st.write(f"**{len(results)} articoli trovati**")
 
         # --- TABELLA RISULTATI ---
-        vis_cols = ['codice', 'prodotto', 'categoria', 'tipologia', 'provenienza', 'prezzo']
-        results = results[vis_cols]  # solo colonne necessarie
-        gb = GridOptionsBuilder.from_dataframe(results)
+        vis_cols = [c for c in ['codice', 'prodotto', 'categoria', 'tipologia', 'provenienza', 'prezzo'] if c in results.columns]
+        gb = GridOptionsBuilder.from_dataframe(results[vis_cols])
         gb.configure_selection('multiple', use_checkbox=True)
         gb.configure_pagination(enabled=False)
         gb.configure_column("prodotto", width=400)
         grid_options = gb.build()
 
         grid_response = AgGrid(
-            results,
+            results[vis_cols],
             gridOptions=grid_options,
             update_mode=GridUpdateMode.SELECTION_CHANGED,
             theme="balham",
@@ -134,9 +135,13 @@ with col2:
         if st.button("🗑️ Rimuovi selezionati") and selected_remove:
             st.session_state["paniere"] = [p for p in st.session_state["paniere"] if p not in selected_remove]
             st.success("Prodotti rimossi.")
+
+        # Totale paniere
+        st.markdown(f"**Totale: {paniere_df['prezzo'].sum():.2f} €**")
     else:
         st.info("Il paniere è vuoto.")
 
+    # --- ESPORTA ---
     def create_excel(data):
         output = BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
