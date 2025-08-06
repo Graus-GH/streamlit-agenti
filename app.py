@@ -8,38 +8,25 @@ from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 # --- CONFIGURAZIONE ---
 st.set_page_config(page_title="Ricerca articoli - Agenti", layout="wide")
 
-# --- DEDUPLICA COLONNE ---
-def make_unique_columns(columns):
-    seen = {}
-    new_cols = []
-    for col in columns:
-        if col in seen:
-            seen[col] += 1
-            new_cols.append(f"{col}_{seen[col]}")
-        else:
-            seen[col] = 0
-            new_cols.append(col)
-    return new_cols
-
 # --- CARICA DATI ---
 @st.cache_data
 def load_data():
     url = "https://docs.google.com/spreadsheets/d/10BFJQTV1yL69cotE779zuR8vtG5NqKWOVH0Uv1AnGaw/export?format=csv&gid=707323537"
     df = pd.read_csv(url)
-    df.columns = df.columns.str.strip().str.lower()
-    mapping = {
-        'codice articolo': 'codice',
-        'nuova descrizione': 'prodotto',
-        'reparto': 'categoria',
-        'sottoreparto': 'tipologia',
-        'altro reparto': 'provenienza',
-        'prezzo': 'prezzo'
-    }
-    df = df.rename(columns=mapping)
-    df = df[list(mapping.values())]
+    # Usa solo le colonne necessarie
+    df = df[['Codice Articolo', 'Nuova descrizione', 'Reparto', 'SottoReparto', 'Altro Reparto', 'Prezzo']]
+    # Rinomina per semplificare
+    df = df.rename(columns={
+        'Codice Articolo': 'codice',
+        'Nuova descrizione': 'prodotto',
+        'Reparto': 'categoria',
+        'SottoReparto': 'tipologia',
+        'Altro Reparto': 'provenienza',
+        'Prezzo': 'prezzo'
+    })
+    # Conversioni numeriche
     df['codice'] = pd.to_numeric(df['codice'], errors='coerce').fillna(0).astype(int)
     df['prezzo'] = pd.to_numeric(df['prezzo'], errors='coerce').fillna(0)
-    df.columns = make_unique_columns(df.columns)
     return df
 
 df = load_data()
@@ -104,7 +91,6 @@ with col1:
                     if prodotto not in st.session_state["paniere"]:
                         st.session_state["paniere"].append(prodotto)
                 st.success(f"{len(selected_rows)} prodotti aggiunti al paniere.")
-                # Reset selezione
                 st.experimental_rerun()
             else:
                 st.warning("Nessun prodotto selezionato.")
@@ -143,7 +129,7 @@ with col2:
         pdf.cell(200, 10, "Paniere Prodotti", ln=True, align='C')
         pdf.ln(10)
         for _, row in data.iterrows():
-            pdf.multi_cell(0, 10, f"{row['codice']} - {row['prodotto']} ({row['prezzo']})")
+            pdf.multi_cell(0, 10, f"{row['codice']} - {row['prodotto']} ({row['prezzo']} €)")
         return pdf.output(dest='S').encode('latin1')
 
     if not paniere_df.empty:
