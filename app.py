@@ -7,55 +7,38 @@ from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 
 st.set_page_config(page_title="Ricerca articoli - Agenti", layout="wide")
 
-# --- DEDUPLICA NOMI COLONNE ---
-def make_unique_columns(columns):
-    seen = {}
-    new_cols = []
-    for col in columns:
-        if col in seen:
-            seen[col] += 1
-            new_cols.append(f"{col}_{seen[col]}")
-        else:
-            seen[col] = 0
-            new_cols.append(col)
-    return new_cols
-
 # --- CARICA DATI ---
 @st.cache_data
 def load_data():
     url = "https://docs.google.com/spreadsheets/d/10BFJQTV1yL69cotE779zuR8vtG5NqKWOVH0Uv1AnGaw/export?format=csv&gid=707323537"
     df = pd.read_csv(url)
-    df.columns = df.columns.str.strip().str.lower()
-    df.columns = make_unique_columns(df.columns)  # colonne uniche
+    df.columns = df.columns.str.strip()
 
-    # Individua colonne
-    def find_col(name):
-        for col in df.columns:
-            if col.startswith(name):
-                return col
-        return None
+    # Usa esattamente le intestazioni come in Google Sheet
+    required_cols = {
+        'codice articolo': 'codice',
+        'nuova descrizione': 'prodotto',
+        'reparto': 'categoria',
+        'sottoreparto': 'tipologia',
+        'altro reparto': 'provenienza',
+        'prezzo': 'prezzo'
+    }
+    cols_present = {v: k for k, v in required_cols.items() if k in df.columns}
+    df = df[list(cols_present.keys())]
+    df = df.rename(columns=required_cols)
 
-    col_codice = find_col('codice articolo') or find_col('codice')
-    col_prodotto = find_col('nuova descrizione') or find_col('prodotto')
-    col_categoria = find_col('reparto') or find_col('categoria')
-    col_tipologia = find_col('sottoreparto') or find_col('tipologia')
-    col_provenienza = find_col('altro reparto') or find_col('provenienza')
-    col_prezzo = find_col('prezzo')
-
-    cols = [c for c in [col_codice, col_prodotto, col_categoria, col_tipologia, col_provenienza, col_prezzo] if c]
-    df = df[cols]
-    df.columns = ['codice', 'prodotto', 'categoria', 'tipologia', 'provenienza', 'prezzo'][:len(df.columns)]
-
-    if 'codice' in df.columns:
-        df['codice'] = pd.to_numeric(df['codice'], errors='coerce').fillna(0).astype(int)
-    if 'prezzo' in df.columns:
-        df['prezzo'] = pd.to_numeric(df['prezzo'], errors='coerce').fillna(0)
+    # Conversioni sicure
+    df['codice'] = pd.to_numeric(df['codice'], errors='coerce').fillna(0).astype(int)
+    df['prezzo'] = pd.to_numeric(df['prezzo'], errors='coerce').fillna(0)
     return df
 
 df = load_data()
 
 if "paniere" not in st.session_state:
     st.session_state["paniere"] = []
+
+if "grid_key" not in st.session_state:
+    st.session_state["grid_key"] = 0  # per forzare refresh della tabella
 
 # --- RICERCA ---
 def search_filter(df, query):
@@ -70,7 +53,7 @@ st.sidebar.header("Filtri")
 query = st.sidebar.text_input("Cerca prodotto, codice, categoria, tipologia, provenienza:")
 results = search_filter(df, query)
 
-if not results.empty and 'prezzo' in results.columns:
+if not results.empty:
     min_price = float(results['prezzo'].min())
     max_price = float(results['prezzo'].max())
 else:
@@ -94,20 +77,20 @@ with col1:
     if not results.empty:
         st.write(f"**{len(results)} articoli trovati**")
 
-        # --- PULSANTE IN ALTO (ALLINEATO A SINISTRA) ---
-        left_col, _ = st.columns([1, 5])
-        with left_col:
-            if st.button("➕ Aggiungi selezionati al paniere"):
+        # --- PULSANTE IN ALTO (A DESTRA) ---
+        top_left, top_right = st.columns([4, 1])
+        with top_right:
+            if st.button("➕ Aggiungi selezionati"):
                 selected_rows = st.session_state.get('last_selection', [])
-                # Sempre lista di dizionari
                 if isinstance(selected_rows, pd.DataFrame):
                     selected_rows = selected_rows.to_dict(orient="records")
                 if selected_rows and len(selected_rows) > 0:
                     for prodotto in selected_rows:
                         if prodotto not in st.session_state["paniere"]:
                             st.session_state["paniere"].append(prodotto)
-                    st.success(f"{len(selected_rows)} prodotti aggiunti al paniere.")
-                    st.session_state['last_selection'] = []  # deselezione
+                    st.success(f"{len(selected_rows)} prodotti aggiunti.")
+                    st.session_state['last_selection'] = []
+                    st.session_state["grid_key"] += 1  # Forza reset selezione
                 else:
                     st.warning("Nessun prodotto selezionato.")
 
@@ -124,10 +107,10 @@ with col1:
             update_mode=GridUpdateMode.SELECTION_CHANGED,
             theme="balham",
             fit_columns_on_grid_load=True,
-            use_container_width=True
+            use_container_width=True,
+            key=st.session_state["grid_key"]  # forza reset
         )
 
-        # Salva selezione in sessione per deselezionare dopo
         selected_rows = grid_response['selected_rows']
         if isinstance(selected_rows, pd.DataFrame):
             selected_rows = selected_rows.to_dict(orient="records")
