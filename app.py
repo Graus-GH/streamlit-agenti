@@ -1,8 +1,5 @@
 import streamlit as st
 import pandas as pd
-from io import BytesIO
-import xlsxwriter
-from fpdf import FPDF
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 
 st.set_page_config(page_title="Ricerca articoli - Agenti", layout="wide")
@@ -14,24 +11,22 @@ def load_data():
     df = pd.read_csv(url)
     df.columns = df.columns.str.strip()
 
-    # Mappiamo solo le colonne che ci servono
     mapping = {
         'Codice Articolo': 'codice',
-        'Nuova Descrizione': 'prodotto',
+        'Nuova descrizione': 'prodotto',
         'Reparto': 'categoria',
-        'Sottoreparto': 'tipologia',
+        'SottoReparto': 'tipologia',
         'Altro Reparto': 'provenienza',
         'Prezzo': 'prezzo'
     }
     available = {k: v for k, v in mapping.items() if k in df.columns}
     df = df[list(available.keys())].rename(columns=available)
 
-    # Conversioni sicure
+    # Conversioni
     if 'codice' in df.columns:
         df['codice'] = pd.to_numeric(df['codice'], errors='coerce').fillna(0).astype(int)
     else:
         df['codice'] = 0
-
     if 'prezzo' in df.columns:
         df['prezzo'] = pd.to_numeric(df['prezzo'], errors='coerce').fillna(0)
     else:
@@ -43,9 +38,8 @@ df = load_data()
 
 if "paniere" not in st.session_state:
     st.session_state["paniere"] = []
-
 if "grid_key" not in st.session_state:
-    st.session_state["grid_key"] = 0  # per forzare refresh tabella
+    st.session_state["grid_key"] = 0
 
 # --- RICERCA ---
 def search_filter(df, query):
@@ -55,7 +49,7 @@ def search_filter(df, query):
     mask = df.apply(lambda row: any(query in str(value).lower() for value in row if pd.notna(value)), axis=1)
     return df[mask]
 
-# --- SIDEBAR: FILTRO PREZZO ---
+# --- FILTRI ---
 st.sidebar.header("Filtri")
 query = st.sidebar.text_input("Cerca prodotto, codice, categoria, tipologia, provenienza:")
 results = search_filter(df, query)
@@ -63,9 +57,11 @@ results = search_filter(df, query)
 if not results.empty:
     min_price = float(results['prezzo'].min())
     max_price = float(results['prezzo'].max())
+    if min_price == max_price:  # evita errore slider
+        max_price = min_price + 1
 else:
     min_price = 0
-    max_price = 0
+    max_price = 1
 
 price_range = st.sidebar.slider("Filtra per prezzo (€)", min_value=min_price, max_value=max_price, value=(min_price, max_price))
 manual_min = st.sidebar.number_input("Prezzo minimo", min_value=min_price, max_value=max_price, value=price_range[0])
@@ -77,31 +73,31 @@ results = results[(results['prezzo'] >= price_range[0]) & (results['prezzo'] <= 
 col1, col2 = st.columns([2.5, 1])
 
 # ===========================
-# COLONNA SINISTRA: RICERCA
+# RISULTATI RICERCA
 # ===========================
 with col1:
     st.header("🔍 Risultati ricerca")
     if not results.empty:
         st.write(f"**{len(results)} articoli trovati**")
 
-        # PULSANTE A DESTRA SOPRA LA TABELLA
+        # Pulsante a destra sopra la tabella
         _, top_right = st.columns([4, 1])
         with top_right:
             if st.button("➕ Aggiungi selezionati"):
                 selected_rows = st.session_state.get('last_selection', [])
                 if isinstance(selected_rows, pd.DataFrame):
                     selected_rows = selected_rows.to_dict(orient="records")
-                if selected_rows and len(selected_rows) > 0:
+                if selected_rows:
                     for prodotto in selected_rows:
                         if prodotto not in st.session_state["paniere"]:
                             st.session_state["paniere"].append(prodotto)
                     st.success(f"{len(selected_rows)} prodotti aggiunti.")
                     st.session_state['last_selection'] = []
-                    st.session_state["grid_key"] += 1  # reset griglia
+                    st.session_state["grid_key"] += 1
                 else:
                     st.warning("Nessun prodotto selezionato.")
 
-        # TABELLA RISULTATI
+        # Tabella
         gb = GridOptionsBuilder.from_dataframe(results)
         gb.configure_selection('multiple', use_checkbox=True)
         gb.configure_pagination(enabled=False)
@@ -129,7 +125,7 @@ with col1:
         st.info("Digita un testo per cercare articoli.")
 
 # ===========================
-# COLONNA DESTRA: PANIERE
+# PANIERE
 # ===========================
 with col2:
     st.header("🛒 Paniere")
