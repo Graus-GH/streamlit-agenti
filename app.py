@@ -61,14 +61,10 @@ st.sidebar.header("Filtri")
 min_price = float(df['prezzo'].min())
 max_price = float(df['prezzo'].max())
 
-# Slider
+# Slider + input manuale
 price_range = st.sidebar.slider("Filtra per prezzo (€)", min_value=min_price, max_value=max_price, value=(min_price, max_price))
-
-# Input manuale
 manual_min = st.sidebar.number_input("Prezzo minimo (€)", min_value=min_price, max_value=max_price, value=price_range[0])
 manual_max = st.sidebar.number_input("Prezzo massimo (€)", min_value=min_price, max_value=max_price, value=price_range[1])
-
-# Usa input manuale se modificato
 price_range = (manual_min, manual_max)
 
 # --- LAYOUT ---
@@ -89,8 +85,9 @@ with col1:
         # --- TABELLA INTERATTIVA ---
         gb = GridOptionsBuilder.from_dataframe(results[['codice', 'prodotto', 'categoria', 'tipologia', 'provenienza', 'prezzo']])
         gb.configure_selection('multiple', use_checkbox=True)
-        gb.configure_pagination(enabled=False)  # Mostra tutti i risultati
+        gb.configure_pagination(enabled=False)  # Mostra tutti
         gb.configure_column("prodotto", width=400)  # Colonna prodotto più larga
+        gb.configure_grid_options(domLayout='normal')  # Scroll verticale
         grid_options = gb.build()
 
         grid_response = AgGrid(
@@ -99,7 +96,8 @@ with col1:
             update_mode=GridUpdateMode.SELECTION_CHANGED,
             theme="balham",
             fit_columns_on_grid_load=False,
-            use_container_width=True
+            use_container_width=True,
+            height=600  # altezza tabella
         )
 
         selected_rows = grid_response['selected_rows']
@@ -127,12 +125,28 @@ with col2:
     st.header("🛒 Paniere")
     paniere_df = pd.DataFrame(st.session_state["paniere"])
     if not paniere_df.empty:
-        st.dataframe(paniere_df, use_container_width=True)
-        to_remove = st.multiselect("Seleziona prodotti da rimuovere", paniere_df.index)
+        # Tabella con checkbox per eliminare
+        gb_p = GridOptionsBuilder.from_dataframe(paniere_df[['codice', 'prodotto', 'prezzo']])
+        gb_p.configure_selection('multiple', use_checkbox=True)
+        gb_p.configure_pagination(enabled=False)
+        grid_options_paniere = gb_p.build()
+
+        grid_response_paniere = AgGrid(
+            paniere_df[['codice', 'prodotto', 'prezzo']],
+            gridOptions=grid_options_paniere,
+            update_mode=GridUpdateMode.SELECTION_CHANGED,
+            theme="balham",
+            fit_columns_on_grid_load=True,
+            use_container_width=True,
+            height=400
+        )
+
+        selected_remove = grid_response_paniere['selected_rows']
+
         if st.button("🗑️ Rimuovi selezionati"):
-            for i in sorted(to_remove, reverse=True):
-                del st.session_state["paniere"][i]
-            st.success("Prodotti rimossi.")
+            if selected_remove:
+                st.session_state["paniere"] = [p for p in st.session_state["paniere"] if p not in selected_remove]
+                st.success("Prodotti rimossi.")
     else:
         st.info("Il paniere è vuoto.")
 
@@ -150,12 +164,12 @@ with col2:
         pdf.cell(200, 10, "Paniere Prodotti", ln=True, align='C')
         pdf.ln(10)
         for _, row in data.iterrows():
-            pdf.multi_cell(0, 10, f"{row['codice']} - {row['prodotto']} ({row['prezzo']})")
+            pdf.multi_cell(0, 10, f"{row['codice']} - {row['prodotto']} ({row['prezzo']} €)")
         return pdf.output(dest='S').encode('latin1')
 
     if not paniere_df.empty:
-        xlsx_data = create_excel(paniere_df)
+        xlsx_data = create_excel(paniere_df[['codice', 'prodotto', 'prezzo']])
         st.download_button("⬇️ Scarica Excel", xlsx_data, "paniere.xlsx")
 
-        pdf_data = create_pdf(paniere_df)
+        pdf_data = create_pdf(paniere_df[['codice', 'prodotto', 'prezzo']])
         st.download_button("⬇️ Scarica PDF", pdf_data, "paniere.pdf")
