@@ -11,9 +11,7 @@ st.set_page_config(page_title="Ricerca articoli - Agenti", layout="wide")
 # --- CARICA DATI ---
 @st.cache_data
 def load_data():
-    # Legge dal file Excel saltando le prime 4 righe
-    url = "https://docs.google.com/spreadsheets/d/10BFJQTV1yL69cotE779zuR8vtG5NqKWOVH0Uv1AnGaw/export?format=xlsx"
-    local_file = "/mnt/data/ModuloArticoliHORECA.xlsx"  # Usa questo se lavori offline
+    local_file = "/mnt/data/ModuloArticoliHORECA.xlsx"
     df = pd.read_excel(local_file, sheet_name="Ricerca", skiprows=4)
 
     df = df.rename(columns={
@@ -30,7 +28,6 @@ def load_data():
     df['codice'] = pd.to_numeric(df['codice'], errors='coerce').fillna(0).astype(int)
     df['prezzo'] = pd.to_numeric(df['prezzo'], errors='coerce').fillna(0)
     return df
-
 
 df = load_data()
 
@@ -147,4 +144,3 @@ with col2:
 
         pdf_data = create_pdf(paniere_df)
         st.download_button("⬇️ Scarica PDF", pdf_data, "paniere.pdf")
-
