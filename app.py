@@ -12,20 +12,30 @@ st.set_page_config(page_title="Ricerca articoli - Agenti", layout="wide")
 @st.cache_data
 def load_data():
     url = "https://docs.google.com/spreadsheets/d/10BFJQTV1yL69cotE779zuR8vtG5NqKWOVH0Uv1AnGaw/export?format=csv&gid=707323537"
-    df = pd.read_csv(url, skiprows=4)  # salta righe introduttive
+    
+    # Carica tutto senza header
+    raw_df = pd.read_csv(url, header=None)
+    
+    # Trova la riga che contiene l’intestazione (dove c'è "CODICE")
+    header_row_index = raw_df[raw_df.iloc[:, 1] == "CODICE"].index[0]
+    
+    # Rileggi i dati veri con intestazione corretta
+    df = pd.read_csv(url, skiprows=header_row_index + 1)
 
+    # Rinomina colonne
     df = df.rename(columns={
-        'CODICE': 'codice',
-        'PRODOTTO': 'prodotto',
-        'CATEGORIA': 'categoria',
-        'TIPOLOGIA': 'tipologia',
-        'PROVENIENZA': 'provenienza',
-        'PREZZO': 'prezzo'
+        'Codice Articolo': 'codice',
+        'Nuova descrizione': 'prodotto',
+        'Reparto': 'categoria',
+        'SottoReparto': 'tipologia',
+        'Altro Reparto': 'provenienza',
+        'Prezzo': 'prezzo'
     })
 
     df = df[['codice', 'prodotto', 'categoria', 'tipologia', 'provenienza', 'prezzo']]
     df['codice'] = pd.to_numeric(df['codice'], errors='coerce').fillna(0).astype(int)
     df['prezzo'] = pd.to_numeric(df['prezzo'], errors='coerce').fillna(0)
+
     return df
 
 df = load_data()
