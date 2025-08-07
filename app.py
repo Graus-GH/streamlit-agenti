@@ -11,20 +11,26 @@ st.set_page_config(page_title="Ricerca articoli - Agenti", layout="wide")
 # --- CARICA DATI ---
 @st.cache_data
 def load_data():
-    url = "https://docs.google.com/spreadsheets/d/10BFJQTV1yL69cotE779zuR8vtG5NqKWOVH0Uv1AnGaw/export?format=csv&gid=707323537"
-    df = pd.read_csv(url)
-    df = df[['Codice Articolo', 'Nuova descrizione', 'Reparto', 'SottoReparto', 'Altro Reparto', 'Prezzo']]
+    # Legge dal file Excel saltando le prime 4 righe
+    url = "https://docs.google.com/spreadsheets/d/10BFJQTV1yL69cotE779zuR8vtG5NqKWOVH0Uv1AnGaw/export?format=xlsx"
+    local_file = "/mnt/data/ModuloArticoliHORECA.xlsx"  # Usa questo se lavori offline
+    df = pd.read_excel(local_file, sheet_name="Ricerca", skiprows=4)
+
     df = df.rename(columns={
-        'Codice Articolo': 'codice',
-        'Nuova descrizione': 'prodotto',
-        'Reparto': 'categoria',
-        'SottoReparto': 'tipologia',
-        'Altro Reparto': 'provenienza',
-        'Prezzo': 'prezzo'
+        'CODICE': 'codice',
+        'PRODOTTO': 'prodotto',
+        'CATEGORIA': 'categoria',
+        'TIPOLOGIA': 'tipologia',
+        'PROVENIENZA': 'provenienza',
+        'PREZZO': 'prezzo'
     })
+
+    df = df[['codice', 'prodotto', 'categoria', 'tipologia', 'provenienza', 'prezzo']]
+
     df['codice'] = pd.to_numeric(df['codice'], errors='coerce').fillna(0).astype(int)
     df['prezzo'] = pd.to_numeric(df['prezzo'], errors='coerce').fillna(0)
     return df
+
 
 df = load_data()
 
@@ -141,3 +147,4 @@ with col2:
 
         pdf_data = create_pdf(paniere_df)
         st.download_button("⬇️ Scarica PDF", pdf_data, "paniere.pdf")
+
