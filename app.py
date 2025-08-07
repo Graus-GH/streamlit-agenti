@@ -13,9 +13,7 @@ st.set_page_config(page_title="Ricerca articoli - Agenti", layout="wide")
 def load_data():
     url = "https://docs.google.com/spreadsheets/d/10BFJQTV1yL69cotE779zuR8vtG5NqKWOVH0Uv1AnGaw/export?format=csv&gid=707323537"
     df = pd.read_csv(url)
-    # Usa solo le colonne necessarie
     df = df[['Codice Articolo', 'Nuova descrizione', 'Reparto', 'SottoReparto', 'Altro Reparto', 'Prezzo']]
-    # Rinomina per semplificare
     df = df.rename(columns={
         'Codice Articolo': 'codice',
         'Nuova descrizione': 'prodotto',
@@ -24,7 +22,6 @@ def load_data():
         'Altro Reparto': 'provenienza',
         'Prezzo': 'prezzo'
     })
-    # Conversioni numeriche
     df['codice'] = pd.to_numeric(df['codice'], errors='coerce').fillna(0).astype(int)
     df['prezzo'] = pd.to_numeric(df['prezzo'], errors='coerce').fillna(0)
     return df
@@ -35,13 +32,22 @@ df = load_data()
 if "paniere" not in st.session_state:
     st.session_state["paniere"] = []
 
-# --- RICERCA "CONTAINS" ---
+# --- RICERCA MULTI-PAROLA ---
 def search_filter(df, query):
     if not query or query.strip() == "":
         return pd.DataFrame(columns=df.columns)
-    query = query.lower()
-    mask = df.apply(lambda row: any(query in str(value).lower() for value in row[['codice', 'prodotto', 'categoria', 'tipologia', 'provenienza']]), axis=1)
-    return df[mask]
+
+    keywords = query.lower().split()
+
+    def row_matches(row):
+        text = ' '.join(str(row[col]).lower() for col in ['codice', 'prodotto', 'categoria', 'tipologia', 'provenienza'])
+        return all(keyword in text for keyword in keywords)
+
+    mask = df.apply(row_matches, axis=1)
+    filtered = df[mask]
+    
+    st.write(f"🔍 Risultati dopo filtro testuale: {len(filtered)} articoli trovati")
+    return filtered
 
 # --- SIDEBAR: FILTRO PREZZO ---
 st.sidebar.header("Filtri")
@@ -62,9 +68,8 @@ with col1:
     results = results[(results['prezzo'] >= price_range[0]) & (results['prezzo'] <= price_range[1])]
 
     if query and not results.empty:
-        st.write(f"**{len(results)} articoli trovati**")
+        st.write(f"**{len(results)} articoli trovati nel range di prezzo selezionato**")
 
-        # --- TABELLA INTERATTIVA ---
         gb = GridOptionsBuilder.from_dataframe(results[['codice', 'prodotto', 'categoria', 'tipologia', 'provenienza', 'prezzo']])
         gb.configure_selection('multiple', use_checkbox=True)
         gb.configure_pagination(paginationAutoPageSize=True)
@@ -79,12 +84,10 @@ with col1:
             use_container_width=True
         )
 
-        # Converte in lista di dizionari
         selected_rows = grid_response['selected_rows']
         if isinstance(selected_rows, pd.DataFrame):
             selected_rows = selected_rows.to_dict(orient="records")
 
-        # --- AGGIUNGI AL PANIERE ---
         if st.button("➕ Aggiungi selezionati al paniere"):
             if selected_rows and len(selected_rows) > 0:
                 for prodotto in selected_rows:
