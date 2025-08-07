@@ -8,11 +8,11 @@ from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 # --- CONFIGURAZIONE ---
 st.set_page_config(page_title="Ricerca articoli - Agenti", layout="wide")
 
-# --- CARICA DATI ---
+# --- CARICA DATI DA GOOGLE SHEET ---
 @st.cache_data
 def load_data():
-    local_file = "/mnt/data/ModuloArticoliHORECA.xlsx"
-    df = pd.read_excel(local_file, sheet_name="Ricerca", skiprows=4)
+    url = "https://docs.google.com/spreadsheets/d/10BFJQTV1yL69cotE779zuR8vtG5NqKWOVH0Uv1AnGaw/export?format=csv&gid=707323537"
+    df = pd.read_csv(url, skiprows=4)  # salta righe introduttive
 
     df = df.rename(columns={
         'CODICE': 'codice',
@@ -24,7 +24,6 @@ def load_data():
     })
 
     df = df[['codice', 'prodotto', 'categoria', 'tipologia', 'provenienza', 'prezzo']]
-
     df['codice'] = pd.to_numeric(df['codice'], errors='coerce').fillna(0).astype(int)
     df['prezzo'] = pd.to_numeric(df['prezzo'], errors='coerce').fillna(0)
     return df
@@ -48,7 +47,7 @@ def search_filter(df, query):
 
     mask = df.apply(row_matches, axis=1)
     filtered = df[mask]
-    
+
     st.write(f"🔍 Risultati dopo filtro testuale: {len(filtered)} articoli trovati")
     return filtered
 
