@@ -90,11 +90,46 @@ def row_matches(row: pd.Series, tokens: List[str], fields: List[str]) -> bool:
 
 
 def make_excel(df: pd.DataFrame) -> bytes:
+    import openpyxl
+    from openpyxl.utils import get_column_letter
+    from openpyxl.styles import Font, Alignment
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Prodotti selezionati"
+
+    # Scrivi intestazioni
+    for col_idx, col_name in enumerate(df.columns, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=col_name.upper())
+        cell.font = Font(name="Corbel", size=12, bold=True)
+        if col_name.lower() == "prezzo":
+            cell.alignment = Alignment(horizontal="right")
+        else:
+            cell.alignment = Alignment(horizontal="left")
+
+    # Scrivi dati
+    for r_idx, row in enumerate(df.itertuples(index=False), start=2):
+        for c_idx, value in enumerate(row, start=1):
+            cell = ws.cell(row=r_idx, column=c_idx, value=value)
+            cell.font = Font(name="Corbel", size=12)
+            if df.columns[c_idx-1].lower() == "prezzo":
+                cell.alignment = Alignment(horizontal="right")
+            else:
+                cell.alignment = Alignment(horizontal="left")
+
+    # Adatta larghezza colonne
+    for col_idx, col_cells in enumerate(ws.columns, start=1):
+        max_length = max(len(str(cell.value)) if cell.value is not None else 0 for cell in col_cells)
+        ws.column_dimensions[get_column_letter(col_idx)].width = max_length + 2
+
+    # Blocca la prima riga
+    ws.freeze_panes = "A2"
+
     buf = io.BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Prodotti selezionati")
+    wb.save(buf)
     buf.seek(0)
     return buf.read()
+
 
 
 def make_pdf(df: pd.DataFrame) -> bytes:
@@ -326,7 +361,12 @@ FINE WINES inclusi ⏳
             "sel": st.column_config.CheckboxColumn(label="", width=38, help="Seleziona riga"),
             "codice": st.column_config.TextColumn(label="codice", width=120),
             "prodotto": st.column_config.TextColumn(label="prodotto", width=380),
-            "prezzo": st.column_config.NumberColumn(label="prezzo", format="€ %.2f", width=100),
+            "prezzo": st.column_config.NumberColumn(
+    label="prezzo",
+    format="€ %.2f",
+    width=80,  # più compatta
+    help="Prezzo unitario"
+),
             "categoria": st.column_config.TextColumn(label="categoria", width=160),
             "tipologia": st.column_config.TextColumn(label="tipologia", width=160),
             "provenienza": st.column_config.TextColumn(label="provenienza", width=160),
@@ -449,3 +489,4 @@ with tab_basket:
             st.rerun()
         else:
             st.info("Seleziona almeno un articolo da rimuovere.")
+
