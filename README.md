@@ -1,12 +1,8 @@
 # Ricerca articoli & Paniere – Streamlit
 
-Interfaccia per agenti con ricerca flessibile su articoli da Google Sheets, filtro prezzo, paniere, export Excel e PDF.
+Questa app permette di cercare articoli da un Google Sheet, filtrarli per prezzo, selezionarli e aggiungerli a un paniere, con possibilità di esportazione in Excel o PDF.
 
-## ⚙️ Configurazione rapida
-1) **Copia questo repo** su GitHub.
-2) Verifica che il Google Sheet sia condiviso con visibilità "Chiunque con il link può visualizzare".
-3) Aggiorna l'ID del foglio e il `gid` in `app.py` (se necessario).
-4) Avvia in locale:
-   ```bash
-   pip install -r requirements.txt
-   streamlit run app.py
+## Installazione locale
+```bash
+pip install -r requirements.txt
+streamlit run app.py
