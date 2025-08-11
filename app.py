@@ -164,6 +164,9 @@ if "reset_res_selection" not in st.session_state:
     st.session_state.reset_res_selection = False
 if "reset_basket_selection" not in st.session_state:
     st.session_state.reset_basket_selection = False
+# 🔔 flash persistente fino alla prossima azione
+if "flash" not in st.session_state:
+    st.session_state.flash = None
 
 # =========================
 # DATA
@@ -175,7 +178,19 @@ df_all = df_all[DISPLAY_COLUMNS].copy()
 
 st.title("🔎 Ricerca articoli & 🧺 Prodotti selezionati")
 
-tab_search, tab_basket = st.tabs(["Ricerca", "Prodotti selezionati"]) 
+# 🔔 Banner notifica: visibile fino alla prossima azione dell'utente
+if st.session_state.flash:
+    f = st.session_state.flash
+    kind = f.get("type", "success")
+    msg = f.get("msg", "")
+    {"success": st.success, "info": st.info, "warning": st.warning, "error": st.error}.get(kind, st.success)(msg)
+    # se l'abbiamo appena mostrata, al prossimo rerun si cancella
+    if not f.get("shown", False):
+        st.session_state.flash["shown"] = True
+    else:
+        st.session_state.flash = None
+
+tab_search, tab_basket = st.tabs(["Ricerca", "Prodotti selezionati"])
 
 # =========================
 # TAB: RICERCA – form, filtro prezzo dinamico, selezione massiva
@@ -269,7 +284,12 @@ with tab_search:
             # reset selezioni dopo aggiunta
             st.session_state.res_select_all_toggle = False
             st.session_state.reset_res_selection = True
-            st.success(f"Aggiunti {len(df_to_add)} articoli al paniere.")
+            # 🔔 notifica che dura fino alla prossima azione
+            st.session_state.flash = {
+                "type": "success",
+                "msg": f"Aggiunti {len(df_to_add)} articoli al paniere.",
+                "shown": False
+            }
             st.rerun()
         else:
             st.info("Seleziona almeno un articolo dalla griglia.")
