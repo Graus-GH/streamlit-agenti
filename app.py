@@ -30,7 +30,8 @@ COL_MAP = {
     "provenienza": 7,  # H
     "prezzo": 8,       # I
 }
-DISPLAY_COLUMNS = ["codice", "prodotto", "categoria", "tipologia", "provenienza", "prezzo"]
+# >>> Nuovo ordine colonne (prezzo dopo prodotto)
+DISPLAY_COLUMNS = ["codice", "prodotto", "prezzo", "categoria", "tipologia", "provenienza"]
 SEARCH_FIELDS = ["codice", "prodotto", "categoria", "tipologia", "provenienza"]
 
 # =========================
@@ -102,8 +103,6 @@ def make_pdf(df: pd.DataFrame) -> bytes:
     - Converte qualunque output di FPDF in bytes (mai str).
     - Rende 'PDF-safe' i testi: sostituisce l'emoji ⏳ con [FW] e filtra i caratteri non Latin-1.
     """
-    from fpdf import FPDF
-
     def pdf_safe(s: str) -> str:
         if s is None:
             return ""
@@ -118,7 +117,9 @@ def make_pdf(df: pd.DataFrame) -> bytes:
     # Header
     pdf.set_font("Helvetica", "B", 10)
     headers = DISPLAY_COLUMNS
-    col_widths = [35, 120, 40, 40, 40, 25]
+    # >>> Larghezze aggiornate per nuovo ordine
+    col_widths = [35, 120, 30, 40, 40, 40]
+
     for h, w in zip(headers, col_widths):
         pdf.cell(w, 8, pdf_safe(h.upper()), border=1)
     pdf.ln(8)
@@ -129,10 +130,10 @@ def make_pdf(df: pd.DataFrame) -> bytes:
         cells = [
             str(r.get("codice", "")),
             str(r.get("prodotto", ""))[:200],
+            ("" if pd.isna(r.get("prezzo")) else f"{r.get('prezzo'):.2f}"),
             str(r.get("categoria", "")),
             str(r.get("tipologia", "")),
             str(r.get("provenienza", "")),
-            ("" if pd.isna(r.get("prezzo")) else f"{r.get('prezzo'):.2f}"),
         ]
         for c, w in zip(cells, col_widths):
             txt = pdf_safe(c.replace("\n", " "))
@@ -141,13 +142,10 @@ def make_pdf(df: pd.DataFrame) -> bytes:
             pdf.cell(w, 6, txt, border=1)
         pdf.ln(6)
 
-    # Forza bytes SEMPRE
     out = pdf.output(dest="S")
     if isinstance(out, (bytes, bytearray)):
         return bytes(out)
-    # FPDF v1: 'S' ritorna str (latin-1)
     return out.encode("latin-1", "ignore")
-
 
 
 def adaptive_price_bounds(df: pd.DataFrame) -> Tuple[float, float]:
@@ -261,19 +259,20 @@ with tab_search:
     )
     df_after_text = df_all.loc[mask_text]
 
-    # Badge rosso se i FINE WINES sono inclusi
+    # Banner a tutta larghezza (arancione chiaro) se FW inclusi
     if st.session_state.include_fw:
         st.markdown(
             """
-<span style="
-display:inline-block;
-background:#dc2626;
-color:#fff;
-padding:6px 10px;
-border-radius:8px;
-font-weight:600;">
+<div style="
+  width:100%;
+  background:#ffedd5;      /* arancione chiarissimo */
+  color:#7c2d12;           /* testo marrone scuro */
+  padding:10px 12px;
+  border:1px solid #fdba74;/* arancione medio */
+  border-radius:8px;
+  font-weight:600;">
 FINE WINES inclusi ⏳
-</span>
+</div>
 """,
             unsafe_allow_html=True,
         )
@@ -312,7 +311,7 @@ FINE WINES inclusi ⏳
         st.session_state.reset_res_selection = not st.session_state.res_select_all_toggle
         st.rerun()
 
-    # Griglia (prefisso ⏳ sui FW in display)
+    # Griglia (prefisso ⏳ sui FW in display) — ordine colonne aggiornato
     default_sel = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
     df_res_display = with_fw_prefix(df_res)
     df_res_display = df_res_display[DISPLAY_COLUMNS].copy()
@@ -326,13 +325,13 @@ FINE WINES inclusi ⏳
         column_config={
             "sel": st.column_config.CheckboxColumn(label="", width=38, help="Seleziona riga"),
             "codice": st.column_config.TextColumn(label="codice", width=120),
-            "prodotto": st.column_config.TextColumn(label="prodotto", width=420),
+            "prodotto": st.column_config.TextColumn(label="prodotto", width=380),
+            "prezzo": st.column_config.NumberColumn(label="prezzo", format="€ %.2f", width=100),
             "categoria": st.column_config.TextColumn(label="categoria", width=160),
             "tipologia": st.column_config.TextColumn(label="tipologia", width=160),
             "provenienza": st.column_config.TextColumn(label="provenienza", width=160),
-            "prezzo": st.column_config.NumberColumn(label="prezzo", format="€ %.2f", width=120),
         },
-        disabled=["codice", "prodotto", "categoria", "tipologia", "provenienza", "prezzo"],
+        disabled=["codice", "prodotto", "prezzo", "categoria", "tipologia", "provenienza"],
         key="res_editor",
     )
 
@@ -398,13 +397,13 @@ with tab_basket:
         column_config={
             "rm": st.column_config.CheckboxColumn(label="", width=38, help="Seleziona per rimuovere"),
             "codice": st.column_config.TextColumn(width=120),
-            "prodotto": st.column_config.TextColumn(width=420),
+            "prodotto": st.column_config.TextColumn(width=380),
+            "prezzo": st.column_config.NumberColumn(format="€ %.2f", width=100),
             "categoria": st.column_config.TextColumn(width=160),
             "tipologia": st.column_config.TextColumn(width=160),
             "provenienza": st.column_config.TextColumn(width=160),
-            "prezzo": st.column_config.NumberColumn(format="€ %.2f", width=120),
         },
-        disabled=["codice", "prodotto", "categoria", "tipologia", "provenienza", "prezzo"],
+        disabled=["codice", "prodotto", "prezzo", "categoria", "tipologia", "provenienza"],
         key="basket_editor",
     )
 
@@ -413,7 +412,7 @@ with tab_basket:
     c1, c2, c3 = st.columns([1, 1, 1])
     remove_btn = c1.button("🗑️ Rimuovi selezionati", type="primary")
 
-    # Ordina prima di esportare
+    # Ordina prima di esportare (criteri invariati)
     basket_sorted = st.session_state.basket.sort_values(
         ["categoria", "tipologia", "provenienza", "prodotto"], kind="stable"
     ).reset_index(drop=True)
@@ -450,4 +449,3 @@ with tab_basket:
             st.rerun()
         else:
             st.info("Seleziona almeno un articolo da rimuovere.")
-
