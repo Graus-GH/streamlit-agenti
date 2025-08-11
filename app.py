@@ -191,6 +191,9 @@ def with_fw_prefix(df: pd.DataFrame) -> pd.DataFrame:
     return d
 
 
+# =========================
+# THEME TWEAKS
+# =========================
 st.markdown(
     """
 <style>
@@ -204,6 +207,9 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# =========================
+# STATE
+# =========================
 if "basket" not in st.session_state:
     st.session_state.basket = pd.DataFrame(columns=DISPLAY_COLUMNS + ["is_fw"])
 if "res_select_all_toggle" not in st.session_state:
@@ -219,6 +225,9 @@ if "flash" not in st.session_state:
 if "include_fw" not in st.session_state:
     st.session_state.include_fw = False
 
+# =========================
+# DATA
+# =========================
 with st.spinner("Caricamento dati…"):
     df_base = load_data(CSV_URL)
 df_base["is_fw"] = False
@@ -228,6 +237,9 @@ st.title("✨GRAUS Proposta Clienti")
 basket_len = len(st.session_state.basket)
 tab_search, tab_basket = st.tabs(["Ricerca", f"Prodotti selezionati ({basket_len})"])
 
+# =========================
+# TAB: RICERCA
+# =========================
 with tab_search:
     with st.form("search_form", clear_on_submit=False):
         q = st.text_input(
@@ -235,22 +247,43 @@ with tab_search:
             placeholder="Es. 'riesling alto adige 0,75'",
         )
 
-        # ✅ Checkbox con sfondo arancione su tutta larghezza
-        st.markdown(
-            """
-            <style>
-            div[data-testid="stForm"] div[data-baseweb="checkbox"] {
-                background-color: #ffedd5;
-                padding: 8px 12px;
-                border: 1px solid #fdba74;
-                border-radius: 8px;
-                font-weight: 600;
-                width: 100%;
-            }
-            </style>
-            """,
-            unsafe_allow_html=True
-        )
+        # ✅ Stile CONDIZIONALE: arancione solo quando include_fw è True
+        if st.session_state.include_fw:
+            st.markdown(
+                """
+                <style>
+                div[data-testid="stForm"] div[data-baseweb="checkbox"]{
+                    background-color:#ffedd5; /* arancione chiaro */
+                    color:#7c2d12;
+                    padding:8px 12px;
+                    border:1px solid #fdba74;
+                    border-radius:8px;
+                    font-weight:600;
+                    width:100%;
+                }
+                </style>
+                """,
+                unsafe_allow_html=True
+            )
+        else:
+            # versione neutra quando non attivo
+            st.markdown(
+                """
+                <style>
+                div[data-testid="stForm"] div[data-baseweb="checkbox"]{
+                    background-color:#f9f9f9;
+                    color:inherit;
+                    padding:8px 12px;
+                    border:1px solid #ddd;
+                    border-radius:8px;
+                    font-weight:600;
+                    width:100%;
+                }
+                </style>
+                """,
+                unsafe_allow_html=True
+            )
+
         st.checkbox(
             "Includi FINE WINES (⏳ disponibilità salvo conferma e almeno 3 settimane per consegna)",
             value=st.session_state.include_fw,
@@ -259,6 +292,7 @@ with tab_search:
 
         submitted = st.form_submit_button("Cerca")
 
+    # Costruisci dataset in base al checkbox
     df_all = df_base.copy()
     if st.session_state.include_fw:
         try:
@@ -269,6 +303,7 @@ with tab_search:
             st.warning("⚠️ Impossibile caricare il foglio Fine Wines.")
             st.caption(f"Dettaglio: {e}")
 
+    # Filtri
     tokens = tokenize_query(q) if q else []
     mask_text = (
         df_all.apply(lambda r: row_matches(r, tokens, SEARCH_FIELDS), axis=1)
@@ -281,7 +316,13 @@ with tab_search:
     c1, c2, c3 = st.columns([1, 1, 2])
     min_price_input = c1.number_input("Prezzo min", min_value=0.0, value=float(dyn_min), step=0.1, format="%.2f")
     max_price_input = c2.number_input("Prezzo max", min_value=0.01, value=float(dyn_max), step=0.1, format="%.2f")
-    price_range = c3.slider("Slider prezzo (sincronizzato)", min_value=0.0, max_value=max(0.01, round(max(min_price_input, max_price_input), 2)), value=(float(min_price_input), float(max_price_input)), step=0.1)
+    price_range = c3.slider(
+        "Slider prezzo (sincronizzato)",
+        min_value=0.0,
+        max_value=max(0.01, round(max(min_price_input, max_price_input), 2)),
+        value=(float(min_price_input), float(max_price_input)),
+        step=0.1
+    )
     min_price = min(price_range[0], price_range[1])
     max_price = max(price_range[0], price_range[1])
 
@@ -290,6 +331,7 @@ with tab_search:
 
     st.caption(f"Risultati: {len(df_res)}")
 
+    # Toggle risultati
     c_toggle, _ = st.columns([3, 7])
     all_on = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
     if c_toggle.button("Deseleziona tutti i risultati" if all_on else "Seleziona tutti i risultati"):
@@ -297,6 +339,7 @@ with tab_search:
         st.session_state.reset_res_selection = not st.session_state.res_select_all_toggle
         st.rerun()
 
+    # Griglia
     default_sel = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
     df_res_display = with_fw_prefix(df_res)[DISPLAY_COLUMNS].copy()
     df_res_display.insert(0, "sel", default_sel)
@@ -322,6 +365,7 @@ with tab_search:
     st.divider()
     add_btn = st.button("➕ Aggiungi selezionati al paniere", type="primary")
 
+    # Notifica
     if st.session_state.flash:
         f = st.session_state.flash
         {"success": st.success, "info": st.info, "warning": st.warning, "error": st.error}.get(
@@ -346,4 +390,3 @@ with tab_search:
             st.rerun()
         else:
             st.info("Seleziona almeno un articolo dalla griglia.")
-
