@@ -359,14 +359,9 @@ FINE WINES inclusi ⏳
         num_rows="fixed",
         column_config={
             "sel": st.column_config.CheckboxColumn(label="", width=38, help="Seleziona riga"),
-            "codice": st.column_config.TextColumn(label="codice", width=120),
+            "codice": st.column_config.TextColumn(label="codice", width=50),
             "prodotto": st.column_config.TextColumn(label="prodotto", width=380),
-            "prezzo": st.column_config.NumberColumn(
-    label="prezzo",
-    format="€ %.2f",
-    width=80,  # più compatta
-    help="Prezzo unitario"
-),
+            "prezzo": st.column_config.NumberColumn(format="€ %.2f", width=75),
             "categoria": st.column_config.TextColumn(label="categoria", width=160),
             "tipologia": st.column_config.TextColumn(label="tipologia", width=160),
             "provenienza": st.column_config.TextColumn(label="provenienza", width=160),
@@ -489,4 +484,5 @@ with tab_basket:
             st.rerun()
         else:
             st.info("Seleziona almeno un articolo da rimuovere.")
+
 
