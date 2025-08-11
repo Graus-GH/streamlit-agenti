@@ -59,11 +59,11 @@ def load_data(url: str) -> pd.DataFrame:
 
     df["prezzo"] = df["prezzo"].apply(to_float)
 
-    # Codice numerico: solo cifre, rimuovi eventuali "decimali" '00' finali
+    # Codice: solo cifre, rimuovi “00” finali
     def normalize_code(x: str) -> str:
-        s = re.sub("[^0-9]", "", str(x))      # solo cifre
-        s = s.lstrip("0") or "0"              # aspetto numerico
-        if len(s) > 2 and s.endswith("00"):   # es. '123400' -> '1234'
+        s = re.sub("[^0-9]", "", str(x))
+        s = s.lstrip("0") or "0"
+        if len(s) > 2 and s.endswith("00"):
             s = s[:-2] or "0"
         return s
 
@@ -74,112 +74,62 @@ def load_data(url: str) -> pd.DataFrame:
     df = df.sort_values(["prodotto", "codice"], kind="stable").reset_index(drop=True)
     return df
 
-def sorted_for_export(df: pd.DataFrame) -> pd.DataFrame:
-    # Ordina per Categoria, Tipologia, Provenienza, Prodotto
-    return df.sort_values(
-        by=["categoria", "tipologia", "provenienza", "prodotto"],
-        kind="stable",
-        na_position="last"
-    ).reset_index(drop=True)
 
 def tokenize_query(q: str) -> List[str]:
     return [t for t in re.split(r"\s+", q.strip()) if t]
+
 
 def row_matches(row: pd.Series, tokens: List[str], fields: List[str]) -> bool:
     haystack = " ".join(str(row[f]) for f in fields).lower()
     return all(t.lower() in haystack for t in tokens)
 
+
 def make_excel(df: pd.DataFrame) -> bytes:
-    df = sorted_for_export(df)
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Prodotti selezionati")
     buf.seek(0)
     return buf.read()
 
-# ---------- PDF “stile listino” ----------
-class ListinoPDF(FPDF):
-    def header(self):
-        # Titolo in alto
-        self.set_font("Helvetica", "B", 14)
-        self.cell(0, 8, "Prodotti selezionati", ln=1)
-        self.ln(2)
-
-    def footer(self):
-        self.set_y(-12)
-        self.set_font("Helvetica", "", 8)
-        self.cell(0, 8, f"Pag. {self.page_no()}", align="R")
-
-def enc(txt: str) -> str:
-    # Gestione accenti su fpdf classico (latin-1)
-    return str(txt).encode("latin-1", "replace").decode("latin-1")
-
-def table_header(pdf: ListinoPDF, widths):
-    pdf.set_fill_color(235, 235, 235)
-    pdf.set_font("Helvetica", "B", 9)
-    headers = ["codice", "prodotto", "categoria", "tipologia", "provenienza", "prezzo"]
-    for h, w in zip(headers, widths):
-        pdf.cell(w, 7, enc(h.upper()), border=1, ln=0, align="L", fill=True)
-    pdf.ln(7)
-
-def new_page_with_header(pdf: ListinoPDF, widths):
-    pdf.add_page(orientation="L")
-    table_header(pdf, widths)
 
 def make_pdf(df: pd.DataFrame) -> bytes:
-    df = sorted_for_export(df)
+    pdf = FPDF(orientation="L", unit="mm", format="A4")
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.cell(0, 10, "Prodotti selezionati", ln=1)
 
-    pdf = ListinoPDF(orientation="L", unit="mm", format="A4")
-    pdf.set_auto_page_break(auto=False)  # gestiamo noi i break
-    widths = [32, 138, 38, 38, 38, 27]   # tot ≈ 311mm area utile in L
-    row_h = 6
+    # Header
+    pdf.set_font("Helvetica", "B", 10)
+    headers = DISPLAY_COLUMNS
+    col_widths = [35, 120, 40, 40, 40, 25]
 
-    new_page_with_header(pdf, widths)
+    for h, w in zip(headers, col_widths):
+        pdf.cell(w, 8, h.upper(), border=1)
+    pdf.ln(8)
 
-    # Gruppi: Categoria -> Tipologia -> Provenienza
-    grouped = df.groupby(["categoria", "tipologia", "provenienza"], dropna=False)
+    pdf.set_font("Helvetica", size=9)
+    for _, r in df.iterrows():
+        cells = [
+            str(r.get("codice", "")),
+            str(r.get("prodotto", ""))[:200],
+            str(r.get("categoria", "")),
+            str(r.get("tipologia", "")),
+            str(r.get("provenienza", "")),
+            ("" if pd.isna(r.get("prezzo")) else f"{r.get('prezzo'):.2f}"),
+        ]
+        for c, w in zip(cells, col_widths):
+            txt = c.replace("\n", " ")
+            if len(txt) > 80:
+                txt = txt[:77] + "..."
+            pdf.cell(w, 6, txt, border=1)
+        pdf.ln(6)
 
-    pdf.set_font("Helvetica", "", 9)
-    for (cat, tip, prov), g in grouped:
-        # Sezione come nei listini: fascia grigia con il “breadcrumb” della sezione
-        if pdf.get_y() > 190:  # spazio residuo, circa
-            new_page_with_header(pdf, widths)
-        pdf.set_fill_color(220, 220, 220)
-        pdf.set_font("Helvetica", "B", 10)
-        section = " / ".join([x for x in [cat, tip, prov] if str(x)])
-        pdf.cell(sum(widths), 7, enc(section), border=1, ln=1, fill=True)
-        pdf.set_font("Helvetica", "", 9)
+    out = pdf.output(dest="S")  # fpdf/fpdf2: può essere str, bytes o bytearray
+    if isinstance(out, (bytes, bytearray)):
+        return bytes(out)
+    else:  # string
+        return out.encode("latin1")
 
-        # Righe prodotti
-        for _, r in g.iterrows():
-            if pdf.get_y() > 190:
-                new_page_with_header(pdf, widths)
-                # ripeti anche la banda di sezione quando spezza pagina
-                pdf.set_fill_color(220, 220, 220)
-                pdf.set_font("Helvetica", "B", 10)
-                pdf.cell(sum(widths), 7, enc(section), border=1, ln=1, fill=True)
-                pdf.set_font("Helvetica", "", 9)
-
-            cells = [
-                enc(str(r.get("codice", ""))),
-                enc(str(r.get("prodotto", ""))[:200]),
-                enc(str(r.get("categoria", ""))),
-                enc(str(r.get("tipologia", ""))),
-                enc(str(r.get("provenienza", ""))),
-                ("" if pd.isna(r.get("prezzo")) else f"{r.get('prezzo'):.2f}")
-            ]
-
-            # stampa riga
-            for c, w in zip(cells, widths):
-                # trunc soft per celle troppo lunghe
-                txt = c.replace("\n", " ")
-                if len(txt) > 90:
-                    txt = txt[:87] + "..."
-                pdf.cell(w, row_h, txt, border=1)
-            pdf.ln(row_h)
-
-    out = pdf.output(dest="S")
-    return out if isinstance(out, (bytes, bytearray)) else out.encode("latin-1")
 
 def adaptive_price_bounds(df: pd.DataFrame) -> Tuple[float, float]:
     if df["prezzo"].notna().any():
@@ -189,6 +139,7 @@ def adaptive_price_bounds(df: pd.DataFrame) -> Tuple[float, float]:
             mx = mn + 0.01
         return max(0.0, round(mn, 2)), max(0.01, round(mx, 2))
     return 0.0, 0.01
+
 
 # =========================
 # THEME TWEAKS (pulsanti #005caa)
@@ -278,7 +229,7 @@ with tab_search:
 
     st.caption(f"Risultati: {len(df_res)}")
 
-    # Toggle: Seleziona/Deseleziona tutti i risultati
+    # Toggle risultati
     c_toggle, _ = st.columns([3, 7])
     all_on = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
     if c_toggle.button("Deseleziona tutti i risultati" if all_on else "Seleziona tutti i risultati"):
@@ -286,7 +237,7 @@ with tab_search:
         st.session_state.reset_res_selection = not st.session_state.res_select_all_toggle
         st.rerun()
 
-    # Griglia con checkbox
+    # Griglia
     default_sel = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
     df_res_display = df_res.copy()
     df_res_display.insert(0, "sel", default_sel)
@@ -384,7 +335,7 @@ with tab_basket:
     c1, c2, c3 = st.columns([1, 1, 1])
     remove_btn = c1.button("🗑️ Rimuovi selezionati", type="primary")
 
-    # Download diretto (ordinati dentro ai generatori)
+    # Download diretto: Excel e PDF
     xbuf = make_excel(basket)
     c2.download_button(
         "⬇️ Esporta Excel",
