@@ -59,11 +59,11 @@ def load_data(url: str) -> pd.DataFrame:
 
     df["prezzo"] = df["prezzo"].apply(to_float)
 
-    # Codice numerico: solo cifre, rimuovi eventuali "decimali" '00' finali
+    # Codice: solo cifre, rimuovi “00” finali
     def normalize_code(x: str) -> str:
-        s = re.sub("[^0-9]", "", str(x))      # solo cifre
-        s = s.lstrip("0") or "0"              # aspetto numerico
-        if len(s) > 2 and s.endswith("00"):   # es. '123400' -> '1234'
+        s = re.sub("[^0-9]", "", str(x))
+        s = s.lstrip("0") or "0"
+        if len(s) > 2 and s.endswith("00"):
             s = s[:-2] or "0"
         return s
 
@@ -124,7 +124,11 @@ def make_pdf(df: pd.DataFrame) -> bytes:
             pdf.cell(w, 6, txt, border=1)
         pdf.ln(6)
 
-    return bytes(pdf.output(dest="S").encode("latin1"))
+    out = pdf.output(dest="S")  # fpdf/fpdf2: può essere str, bytes o bytearray
+    if isinstance(out, (bytes, bytearray)):
+        return bytes(out)
+    else:  # string
+        return out.encode("latin1")
 
 
 def adaptive_price_bounds(df: pd.DataFrame) -> Tuple[float, float]:
@@ -166,9 +170,8 @@ if "reset_res_selection" not in st.session_state:
     st.session_state.reset_res_selection = False
 if "reset_basket_selection" not in st.session_state:
     st.session_state.reset_basket_selection = False
-# 🔔 flash persistente fino alla prossima azione (mostra una volta, poi si cancella)
 if "flash" not in st.session_state:
-    st.session_state.flash = None
+    st.session_state.flash = None  # notifica one-shot
 
 # =========================
 # DATA
@@ -179,10 +182,8 @@ df_all = df_all[DISPLAY_COLUMNS].copy()
 
 st.title("📦✨GRAUS Proposta+")
 
-# Calcolo conteggio paniere per etichetta tab dinamica
-current_basket = st.session_state.basket.copy()
-basket_len = len(current_basket)
-
+# Conteggio paniere -> etichetta scheda dinamica
+basket_len = len(st.session_state.basket)
 tab_search, tab_basket = st.tabs(["Ricerca", f"Prodotti selezionati ({basket_len})"])
 
 # =========================
@@ -228,7 +229,7 @@ with tab_search:
 
     st.caption(f"Risultati: {len(df_res)}")
 
-    # Toggle: Seleziona/Deseleziona tutti i risultati
+    # Toggle risultati
     c_toggle, _ = st.columns([3, 7])
     all_on = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
     if c_toggle.button("Deseleziona tutti i risultati" if all_on else "Seleziona tutti i risultati"):
@@ -236,7 +237,7 @@ with tab_search:
         st.session_state.reset_res_selection = not st.session_state.res_select_all_toggle
         st.rerun()
 
-    # Griglia con checkbox
+    # Griglia
     default_sel = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
     df_res_display = df_res.copy()
     df_res_display.insert(0, "sel", default_sel)
@@ -262,13 +263,12 @@ with tab_search:
     st.divider()
     add_btn = st.button("➕ Aggiungi selezionati al paniere", type="primary")
 
-    # 🔔 Notifica posizionata SOTTO il bottone "Aggiungi…"
+    # Notifica SOTTO il bottone
     if st.session_state.flash:
         f = st.session_state.flash
-        kind = f.get("type", "success")
-        msg = f.get("msg", "")
-        {"success": st.success, "info": st.info, "warning": st.warning, "error": st.error}.get(kind, st.success)(msg)
-        # al primo rerun dopo la visualizzazione la cancelliamo
+        {"success": st.success, "info": st.info, "warning": st.warning, "error": st.error}.get(
+            f.get("type", "success"), st.success
+        )(f.get("msg", ""))
         if not f.get("shown", False):
             st.session_state.flash["shown"] = True
         else:
@@ -283,10 +283,8 @@ with tab_search:
             combined = pd.concat([basket, df_to_add], ignore_index=True)
             combined = combined.drop_duplicates(subset=["codice"]).reset_index(drop=True)
             st.session_state.basket = combined
-            # reset selezioni dopo aggiunta
             st.session_state.res_select_all_toggle = False
             st.session_state.reset_res_selection = True
-            # notifica one-shot
             st.session_state.flash = {
                 "type": "success",
                 "msg": f"Aggiunti {len(df_to_add)} articoli al paniere.",
@@ -297,11 +295,12 @@ with tab_search:
             st.info("Seleziona almeno un articolo dalla griglia.")
 
 # =========================
-# TAB: PANIERE – selezione massiva, export
+# TAB: PANIERE
 # =========================
 with tab_basket:
     basket = st.session_state.basket.copy()
-    # Toggle selezione TUTTO il paniere
+
+    # Toggle selezione completo paniere
     c_toggle_b, _ = st.columns([3, 7])
     all_on_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
     if c_toggle_b.button("Deseleziona tutto il paniere" if all_on_b else "Seleziona tutto il paniere"):
@@ -332,11 +331,26 @@ with tab_basket:
     )
 
     st.divider()
-    c1, c2, c3, c4 = st.columns([1, 1, 1, 1])
+    # Azioni (senza "Svuota paniere")
+    c1, c2, c3 = st.columns([1, 1, 1])
     remove_btn = c1.button("🗑️ Rimuovi selezionati", type="primary")
-    clear_btn = c2.button("♻️ Svuota paniere")
-    xlsx_btn = c3.button("⬇️ Esporta Excel")
-    pdf_btn = c4.button("⬇️ Crea PDF")
+
+    # Download diretto: Excel e PDF
+    xbuf = make_excel(basket)
+    c2.download_button(
+        "⬇️ Esporta Excel",
+        data=xbuf,
+        file_name="prodotti_selezionati.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+    pbuf = make_pdf(basket)
+    c3.download_button(
+        "⬇️ Crea PDF",
+        data=pbuf,
+        file_name="prodotti_selezionati.pdf",
+        mime="application/pdf",
+    )
 
     if remove_btn:
         to_remove = set(edited_basket.loc[edited_basket["rm"].fillna(False), "codice"].tolist())
@@ -348,32 +362,3 @@ with tab_basket:
             st.rerun()
         else:
             st.info("Seleziona almeno un articolo da rimuovere.")
-
-    if clear_btn:
-        with st.expander("Conferma svuotamento paniere", expanded=True):
-            confirm = st.checkbox("Confermo di voler svuotare completamente il paniere.")
-            do_clear = st.button("Svuota ora", type="primary", disabled=not confirm)
-            if do_clear:
-                st.session_state.basket = pd.DataFrame(columns=DISPLAY_COLUMNS)
-                st.session_state.basket_select_all_toggle = False
-                st.session_state.reset_basket_selection = True
-                st.success("Paniere svuotato.")
-                st.rerun()
-
-    if xlsx_btn:
-        xbuf = make_excel(basket)
-        st.download_button(
-            "Scarica Excel",
-            data=xbuf,
-            file_name="prodotti_selezionati.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
-
-    if pdf_btn:
-        pbuf = make_pdf(basket)
-        st.download_button(
-            "Scarica PDF",
-            data=pbuf,
-            file_name="prodotti_selezionati.pdf",
-            mime="application/pdf",
-        )
