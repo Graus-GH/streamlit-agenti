@@ -8,7 +8,7 @@ import requests
 import streamlit as st
 from fpdf import FPDF
 
-st.set_page_config(page_title="📦✨GRAUS Proposta+", layout="wide")
+st.set_page_config(page_title="✨GRAUS Proposta Clienti", layout="wide")
 
 # =========================
 # CONFIG – ORIGINE DATI
@@ -223,7 +223,7 @@ with st.spinner("Caricamento dati…"):
     df_base = load_data(CSV_URL)
 df_base["is_fw"] = False
 
-st.title("📦✨GRAUS Proposta+")
+st.title("✨GRAUS Proposta Clienti")
 
 basket_len = len(st.session_state.basket)
 tab_search, tab_basket = st.tabs(["Ricerca", f"Prodotti selezionati ({basket_len})"])
@@ -346,3 +346,4 @@ with tab_search:
             st.rerun()
         else:
             st.info("Seleziona almeno un articolo dalla griglia.")
+
