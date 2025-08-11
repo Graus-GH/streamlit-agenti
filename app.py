@@ -61,13 +61,10 @@ def load_data(url: str) -> pd.DataFrame:
 
     # Codice numerico: solo cifre, rimuovi eventuali "decimali" '00' finali
     def normalize_code(x: str) -> str:
-        s = re.sub("[^0-9]", "", str(x))  # solo cifre
-        s = s.lstrip("0") or "0"          # aspetto numerico
-        # elimina gli ultimi due zeri se presenti (caso es. '123400' da '1234,00')
-        if len(s) > 2 and s.endswith("00"):
-            s = s[:-2]
-            if s == "":
-                s = "0"
+        s = re.sub("[^0-9]", "", str(x))      # solo cifre
+        s = s.lstrip("0") or "0"              # aspetto numerico
+        if len(s) > 2 and s.endswith("00"):   # es. '123400' -> '1234'
+            s = s[:-2] or "0"
         return s
 
     df["codice"] = df["codice"].astype(str).apply(normalize_code)
@@ -169,7 +166,7 @@ if "reset_res_selection" not in st.session_state:
     st.session_state.reset_res_selection = False
 if "reset_basket_selection" not in st.session_state:
     st.session_state.reset_basket_selection = False
-# 🔔 flash persistente fino alla prossima azione
+# 🔔 flash persistente fino alla prossima azione (mostra una volta, poi si cancella)
 if "flash" not in st.session_state:
     st.session_state.flash = None
 
@@ -178,15 +175,18 @@ if "flash" not in st.session_state:
 # =========================
 with st.spinner("Caricamento dati…"):
     df_all = load_data(CSV_URL)
-
 df_all = df_all[DISPLAY_COLUMNS].copy()
 
 st.title("📦✨GRAUS Proposta+")
 
-tab_search, tab_basket = st.tabs(["Ricerca", "Prodotti selezionati"])
+# Calcolo conteggio paniere per etichetta tab dinamica
+current_basket = st.session_state.basket.copy()
+basket_len = len(current_basket)
+
+tab_search, tab_basket = st.tabs(["Ricerca", f"Prodotti selezionati ({basket_len})"])
 
 # =========================
-# TAB: RICERCA – form, filtro prezzo dinamico, selezione massiva
+# TAB: RICERCA
 # =========================
 with tab_search:
     with st.form("search_form", clear_on_submit=False):
@@ -228,25 +228,13 @@ with tab_search:
 
     st.caption(f"Risultati: {len(df_res)}")
 
-    # Pulsante unico: Seleziona/Deseleziona tutti i risultati (toggle)
-    c_toggle, _ = st.columns([2.6, 7.4])
-    toggle_label = "Deseleziona tutti i risultati" if (st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection) else "Seleziona tutti i risultati"
-    if c_toggle.button(toggle_label):
-        st.session_state.res_select_all_toggle = not (st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection)
-        st.session_state.reset_res_selection = False if st.session_state.res_select_all_toggle else True
+    # Toggle: Seleziona/Deseleziona tutti i risultati
+    c_toggle, _ = st.columns([3, 7])
+    all_on = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
+    if c_toggle.button("Deseleziona tutti i risultati" if all_on else "Seleziona tutti i risultati"):
+        st.session_state.res_select_all_toggle = not all_on
+        st.session_state.reset_res_selection = not st.session_state.res_select_all_toggle
         st.rerun()
-
-    # 🔔 Notifica (one-shot) posizionata subito sotto il pulsante toggle
-    if st.session_state.flash:
-        f = st.session_state.flash
-        kind = f.get("type", "success")
-        msg = f.get("msg", "")
-        {"success": st.success, "info": st.info, "warning": st.warning, "error": st.error}.get(kind, st.success)(msg)
-        # Se è stata appena mostrata, al prossimo rerun si cancella
-        if not f.get("shown", False):
-            st.session_state.flash["shown"] = True
-        else:
-            st.session_state.flash = None
 
     # Griglia con checkbox
     default_sel = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
@@ -274,6 +262,18 @@ with tab_search:
     st.divider()
     add_btn = st.button("➕ Aggiungi selezionati al paniere", type="primary")
 
+    # 🔔 Notifica posizionata SOTTO il bottone "Aggiungi…"
+    if st.session_state.flash:
+        f = st.session_state.flash
+        kind = f.get("type", "success")
+        msg = f.get("msg", "")
+        {"success": st.success, "info": st.info, "warning": st.warning, "error": st.error}.get(kind, st.success)(msg)
+        # al primo rerun dopo la visualizzazione la cancelliamo
+        if not f.get("shown", False):
+            st.session_state.flash["shown"] = True
+        else:
+            st.session_state.flash = None
+
     if add_btn:
         selected_mask = edited_res["sel"].fillna(False)
         selected_codes = set(edited_res.loc[selected_mask, "codice"].tolist())
@@ -286,7 +286,7 @@ with tab_search:
             # reset selezioni dopo aggiunta
             st.session_state.res_select_all_toggle = False
             st.session_state.reset_res_selection = True
-            # 🔔 notifica che dura fino alla prossima azione, mostrata sotto il toggle
+            # notifica one-shot
             st.session_state.flash = {
                 "type": "success",
                 "msg": f"Aggiunti {len(df_to_add)} articoli al paniere.",
@@ -301,87 +301,79 @@ with tab_search:
 # =========================
 with tab_basket:
     basket = st.session_state.basket.copy()
-    st.subheader(f"🧺 Prodotti selezionati ({len(basket)})")
+    # Toggle selezione TUTTO il paniere
+    c_toggle_b, _ = st.columns([3, 7])
+    all_on_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
+    if c_toggle_b.button("Deseleziona tutto il paniere" if all_on_b else "Seleziona tutto il paniere"):
+        st.session_state.basket_select_all_toggle = not all_on_b
+        st.session_state.reset_basket_selection = not st.session_state.basket_select_all_toggle
+        st.rerun()
 
-    if len(basket) > 0:
-        csel_all_b, cdesel_all_b, _ = st.columns([1.6, 2.0, 6])
-        if csel_all_b.button("Seleziona tutto il paniere"):
-            st.session_state.basket_select_all_toggle = True
-            st.session_state.reset_basket_selection = False
-            st.rerun()
-        if cdesel_all_b.button("Deseleziona tutto il paniere"):
+    default_sel_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
+    basket_display = basket.copy()
+    basket_display.insert(0, "rm", default_sel_b)
+
+    edited_basket = st.data_editor(
+        basket_display,
+        hide_index=True,
+        use_container_width=True,
+        num_rows="fixed",
+        column_config={
+            "rm": st.column_config.CheckboxColumn(label="", width=38, help="Seleziona per rimuovere"),
+            "codice": st.column_config.TextColumn(width=120),
+            "prodotto": st.column_config.TextColumn(width=420),
+            "categoria": st.column_config.TextColumn(width=160),
+            "tipologia": st.column_config.TextColumn(width=160),
+            "provenienza": st.column_config.TextColumn(width=160),
+            "prezzo": st.column_config.NumberColumn(format="€ %.2f", width=120),
+        },
+        disabled=["codice", "prodotto", "categoria", "tipologia", "provenienza", "prezzo"],
+        key="basket_editor",
+    )
+
+    st.divider()
+    c1, c2, c3, c4 = st.columns([1, 1, 1, 1])
+    remove_btn = c1.button("🗑️ Rimuovi selezionati", type="primary")
+    clear_btn = c2.button("♻️ Svuota paniere")
+    xlsx_btn = c3.button("⬇️ Esporta Excel")
+    pdf_btn = c4.button("⬇️ Crea PDF")
+
+    if remove_btn:
+        to_remove = set(edited_basket.loc[edited_basket["rm"].fillna(False), "codice"].tolist())
+        if to_remove:
+            st.session_state.basket = basket[~basket["codice"].isin(to_remove)].reset_index(drop=True)
             st.session_state.basket_select_all_toggle = False
             st.session_state.reset_basket_selection = True
+            st.success("Rimossi articoli selezionati.")
             st.rerun()
+        else:
+            st.info("Seleziona almeno un articolo da rimuovere.")
 
-        default_sel_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
-        basket_display = basket.copy()
-        basket_display.insert(0, "rm", default_sel_b)
-
-        edited_basket = st.data_editor(
-            basket_display,
-            hide_index=True,
-            use_container_width=True,
-            num_rows="fixed",
-            column_config={
-                "rm": st.column_config.CheckboxColumn(label="", width=38, help="Seleziona per rimuovere"),
-                "codice": st.column_config.TextColumn(width=120),
-                "prodotto": st.column_config.TextColumn(width=420),
-                "categoria": st.column_config.TextColumn(width=160),
-                "tipologia": st.column_config.TextColumn(width=160),
-                "provenienza": st.column_config.TextColumn(width=160),
-                "prezzo": st.column_config.NumberColumn(format="€ %.2f", width=120),
-            },
-            disabled=["codice", "prodotto", "categoria", "tipologia", "provenienza", "prezzo"],
-            key="basket_editor",
-        )
-
-        st.divider()
-        c1, c2, c3, c4 = st.columns([1, 1, 1, 1])
-        remove_btn = c1.button("🗑️ Rimuovi selezionati", type="primary")
-        clear_btn = c2.button("♻️ Svuota paniere")
-        xlsx_btn = c3.button("⬇️ Esporta Excel")
-        pdf_btn = c4.button("⬇️ Crea PDF")
-
-        if remove_btn:
-            to_remove = set(edited_basket.loc[edited_basket["rm"].fillna(False), "codice"].tolist())
-            if to_remove:
-                st.session_state.basket = basket[~basket["codice"].isin(to_remove)].reset_index(drop=True)
+    if clear_btn:
+        with st.expander("Conferma svuotamento paniere", expanded=True):
+            confirm = st.checkbox("Confermo di voler svuotare completamente il paniere.")
+            do_clear = st.button("Svuota ora", type="primary", disabled=not confirm)
+            if do_clear:
+                st.session_state.basket = pd.DataFrame(columns=DISPLAY_COLUMNS)
                 st.session_state.basket_select_all_toggle = False
                 st.session_state.reset_basket_selection = True
-                st.success("Rimossi articoli selezionati.")
+                st.success("Paniere svuotato.")
                 st.rerun()
-            else:
-                st.info("Seleziona almeno un articolo da rimuovere.")
 
-        if clear_btn:
-            with st.expander("Conferma svuotamento paniere", expanded=True):
-                confirm = st.checkbox("Confermo di voler svuotare completamente il paniere.")
-                do_clear = st.button("Svuota ora", type="primary", disabled=not confirm)
-                if do_clear:
-                    st.session_state.basket = pd.DataFrame(columns=DISPLAY_COLUMNS)
-                    st.session_state.basket_select_all_toggle = False
-                    st.session_state.reset_basket_selection = True
-                    st.success("Paniere svuotato.")
-                    st.rerun()
+    if xlsx_btn:
+        xbuf = make_excel(basket)
+        st.download_button(
+            "Scarica Excel",
+            data=xbuf,
+            file_name="prodotti_selezionati.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
 
-        if xlsx_btn:
-            xbuf = make_excel(basket)
-            st.download_button(
-                "Scarica Excel",
-                data=xbuf,
-                file_name="prodotti_selezionati.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
-
-        if pdf_btn:
-            pbuf = make_pdf(basket)
-            st.download_button(
-                "Scarica PDF",
-                data=pbuf,
-                file_name="prodotti_selezionati.pdf",
-                mime="application/pdf",
-            )
-
-    else:
-        st.info("Il paniere è vuoto. Aggiungi articoli dalla scheda 'Ricerca'.")
+    if pdf_btn:
+        pbuf = make_pdf(basket)
+        st.download_button(
+            "Scarica PDF",
+            data=pbuf,
+            file_name="prodotti_selezionati.pdf",
+            mime="application/pdf",
+        )
