@@ -1,6 +1,7 @@
 import io
 import re
 from typing import List, Tuple
+
 import numpy as np
 import pandas as pd
 import requests
@@ -9,30 +10,41 @@ from fpdf import FPDF
 
 st.set_page_config(page_title="Ricerca articoli • Prodotti selezionati", layout="wide")
 
+# =========================
+# CONFIG – ORIGINE DATI
+# =========================
 SHEET_ID = "10BFJQTV1yL69cotE779zuR8vtG5NqKWOVH0Uv1AnGaw"
 GID = "707323537"
 CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
 
 COL_MAP = {
-    "codice": 0,
-    "prodotto": 2,
-    "categoria": 5,
-    "tipologia": 6,
-    "provenienza": 7,
-    "prezzo": 8,
+    "codice": 0,       # A
+    "prodotto": 2,     # C
+    "categoria": 5,    # F
+    "tipologia": 6,    # G
+    "provenienza": 7,  # H
+    "prezzo": 8,       # I
 }
-
 DISPLAY_COLUMNS = ["codice", "prodotto", "categoria", "tipologia", "provenienza", "prezzo"]
 SEARCH_FIELDS = ["codice", "prodotto", "categoria", "tipologia", "provenienza"]
 
+# =========================
+# UTILS
+# =========================
 @st.cache_data(ttl=600)
 def load_data(url: str) -> pd.DataFrame:
     r = requests.get(url)
     r.raise_for_status()
     df_raw = pd.read_csv(io.BytesIO(r.content))
+
+    # estrai colonne
     df = pd.DataFrame({name: df_raw.iloc[:, idx] for name, idx in COL_MAP.items()})
+
+    # stringhe
     for c in ["prodotto", "categoria", "tipologia", "provenienza"]:
         df[c] = df[c].astype(str).fillna("").str.strip()
+
+    # prezzo -> float
     def to_float(x):
         if pd.isna(x):
             return np.nan
@@ -45,22 +57,31 @@ def load_data(url: str) -> pd.DataFrame:
             return float(s)
         except Exception:
             return np.nan
+
     df["prezzo"] = df["prezzo"].apply(to_float)
+
+    # codice -> solo cifre, niente decimali, niente separatori
     def normalize_code(x: str) -> str:
         s = re.sub(r"\D", "", str(x))
         s = s.lstrip("0") or "0"
         return s
+
     df["codice"] = df["codice"].astype(str).apply(normalize_code)
+
+    # filtra righe valide
     df = df[(df["codice"] != "") & (df["prodotto"] != "")]
     df = df.sort_values(["prodotto", "codice"], kind="stable").reset_index(drop=True)
     return df
 
+
 def tokenize_query(q: str) -> List[str]:
     return [t for t in re.split(r"\s+", q.strip()) if t]
+
 
 def row_matches(row: pd.Series, tokens: List[str], fields: List[str]) -> bool:
     haystack = " ".join(str(row[f]) for f in fields).lower()
     return all(t.lower() in haystack for t in tokens)
+
 
 def make_excel(df: pd.DataFrame) -> bytes:
     buf = io.BytesIO()
@@ -69,17 +90,21 @@ def make_excel(df: pd.DataFrame) -> bytes:
     buf.seek(0)
     return buf.read()
 
+
 def make_pdf(df: pd.DataFrame) -> bytes:
     pdf = FPDF(orientation="L", unit="mm", format="A4")
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 14)
     pdf.cell(0, 10, "Prodotti selezionati", ln=1)
+
+    # Header
     pdf.set_font("Helvetica", "B", 10)
     headers = DISPLAY_COLUMNS
     col_widths = [35, 120, 40, 40, 40, 25]
     for h, w in zip(headers, col_widths):
         pdf.cell(w, 8, h.upper(), border=1)
     pdf.ln(8)
+
     pdf.set_font("Helvetica", size=9)
     for _, r in df.iterrows():
         cells = [
@@ -96,7 +121,9 @@ def make_pdf(df: pd.DataFrame) -> bytes:
                 txt = txt[:77] + "..."
             pdf.cell(w, 6, txt, border=1)
         pdf.ln(6)
+
     return bytes(pdf.output(dest="S").encode("latin1"))
+
 
 def adaptive_price_bounds(df: pd.DataFrame) -> Tuple[float, float]:
     if df["prezzo"].notna().any():
@@ -107,56 +134,216 @@ def adaptive_price_bounds(df: pd.DataFrame) -> Tuple[float, float]:
         return max(0.0, round(mn, 2)), max(0.01, round(mx, 2))
     return 0.0, 0.01
 
+
+# =========================
+# THEME TWEAKS (colori)
+# =========================
 st.markdown("""
 <style>
+/* pulsanti primary nel colore aziendale */
 .stButton > button[kind="primary"] {
   background-color: #005caa;
   border-color: #005caa;
   color: #fff;
 }
+/* badge selezione (colonna indicatore) */
+.badge-blue { font-weight: 700; }
 </style>
 """, unsafe_allow_html=True)
 
+# =========================
+# STATE
+# =========================
 if "basket" not in st.session_state:
     st.session_state.basket = pd.DataFrame(columns=DISPLAY_COLUMNS)
+# flags per reset selezioni dopo aggiunta/rimozione
+if "reset_search_selection" not in st.session_state:
+    st.session_state.reset_search_selection = False
+if "reset_basket_selection" not in st.session_state:
+    st.session_state.reset_basket_selection = False
 
+# =========================
+# DATA
+# =========================
 with st.spinner("Caricamento dati…"):
     df_all = load_data(CSV_URL)
 
 df_all = df_all[DISPLAY_COLUMNS].copy()
 
 st.title("🔎 Ricerca articoli & 🧺 Prodotti selezionati")
+tab_search, tab_basket = st.tabs(["Ricerca", "Prodotti selezionati"])
 
-# --- Ricerca ---
-q = st.text_input("Cerca articoli", placeholder="Es. 'riesling alto adige 0,75'")
-tokens = tokenize_query(q) if q else []
-mask_text = df_all.apply(lambda r: row_matches(r, tokens, SEARCH_FIELDS), axis=1) if tokens else pd.Series(True, index=df_all.index)
-df_after_text = df_all.loc[mask_text]
+# =========================
+# TAB: RICERCA – con form, selezione massiva e filtro prezzo dinamico
+# =========================
+with tab_search:
+    with st.form("search_form", clear_on_submit=False):
+        q = st.text_input(
+            "Cerca (multi-parola) su: codice, prodotto, categoria, tipologia, provenienza",
+            placeholder="Es. 'riesling alto adige 0,75'",
+        )
+        # prima filtra per testo per ottenere bounds dinamici del prezzo
+        tokens = tokenize_query(q) if q else []
+        mask_text = df_all.apply(lambda r: row_matches(r, tokens, SEARCH_FIELDS), axis=1) if tokens else pd.Series(True, index=df_all.index)
+        df_after_text = df_all.loc[mask_text]
+        # bounds dinamici
+        dyn_min, dyn_max = adaptive_price_bounds(df_after_text)
 
-mn, mx = adaptive_price_bounds(df_after_text)
-min_price = st.number_input("Prezzo min", min_value=0.0, value=float(mn), step=0.1, format="%.2f")
-max_price = st.number_input("Prezzo max", min_value=0.01, value=float(mx), step=0.1, format="%.2f")
-mask_price = df_after_text["prezzo"].fillna(0.0).between(min_price, max_price)
-df_res = df_after_text.loc[mask_price].reset_index(drop=True)
+        c1, c2, c3 = st.columns([1, 1, 2])
+        min_price_input = c1.number_input("Prezzo min", min_value=0.0, value=float(dyn_min), step=0.1, format="%.2f")
+        max_price_input = c2.number_input("Prezzo max", min_value=0.01, value=float(dyn_max), step=0.1, format="%.2f")
+        max_for_slider = max(min_price_input, max_price_input)
+        price_range = c3.slider(
+            "Slider prezzo (sincronizzato)",
+            min_value=0.0,
+            max_value=max(0.01, round(max_for_slider, 2)),
+            value=(float(min_price_input), float(max_price_input)),
+            step=0.1,
+        )
+        # sincronizza number_input con slider
+        min_price = min(price_range[0], price_range[1])
+        max_price = max(price_range[0], price_range[1])
 
-selected_rows = st.multiselect("Seleziona prodotti", options=df_res.index, format_func=lambda x: df_res.loc[x, "prodotto"])
-if st.button("Aggiungi selezionati al paniere", type="primary"):
-    if selected_rows:
-        st.session_state.basket = pd.concat([st.session_state.basket, df_res.loc[selected_rows]], ignore_index=True).drop_duplicates(subset=["codice"])
-        st.success(f"Aggiunti {len(selected_rows)} prodotti al paniere.")
+        submitted = st.form_submit_button("Cerca", use_container_width=False)
+
+    # applica filtri
+    mask_price = df_after_text["prezzo"].fillna(0.0).between(min_price, max_price)
+    df_res = df_after_text.loc[mask_price].reset_index(drop=True)
+
+    st.caption(f"Risultati: {len(df_res)}")
+
+    # Selezione massiva e griglia
+    csel_all, cspace = st.columns([1, 5])
+    select_all = csel_all.checkbox("Seleziona tutti i risultati", value=False, key="search_select_all")
+
+    df_res_display = df_res.copy()
+    # colonna indicatore + checkbox
+    df_res_display.insert(0, "sel", False if st.session_state.reset_search_selection else select_all)
+    df_res_display.insert(1, "•", ["🟦" if (select_all and not st.session_state.reset_search_selection) else "" for _ in range(len(df_res_display))])
+
+    edited_res = st.data_editor(
+        df_res_display,
+        hide_index=True,
+        use_container_width=True,
+        num_rows="fixed",
+        column_config={
+            "sel": st.column_config.CheckboxColumn(label="", help="Seleziona riga", width="small"),
+            "•": st.column_config.TextColumn(label="", width=40),
+            "codice": st.column_config.TextColumn(label="codice", width=110),
+            "prodotto": st.column_config.TextColumn(label="prodotto", width=380),
+            "categoria": st.column_config.TextColumn(label="categoria", width=160),
+            "tipologia": st.column_config.TextColumn(label="tipologia", width=160),
+            "provenienza": st.column_config.TextColumn(label="provenienza", width=160),
+            "prezzo": st.column_config.NumberColumn(label="prezzo", format="€ %.2f", width=120),
+        },
+        disabled=["•", "codice", "prodotto", "categoria", "tipologia", "provenienza", "prezzo"],
+        key="res_editor",
+    )
+
+    st.divider()
+    c_add, c_clear = st.columns([1, 1])
+    add_btn = c_add.button("➕ Aggiungi selezionati al paniere", type="primary")
+    clear_sel = c_clear.button("Deseleziona tutti i risultati")
+
+    if clear_sel:
+        # forza reset delle selezioni
+        st.session_state.reset_search_selection = True
+        st.rerun()
+
+    if add_btn:
+        selected_codes = set(edited_res.loc[edited_res["sel"].fillna(False), "codice"].tolist())
+        if selected_codes:
+            df_to_add = df_res[df_res["codice"].isin(selected_codes)]
+            basket = st.session_state.basket
+            combined = pd.concat([basket, df_to_add], ignore_index=True)
+            combined = combined.drop_duplicates(subset=["codice"]).reset_index(drop=True)
+            st.session_state.basket = combined
+            # reset selezioni dopo aggiunta
+            st.session_state.reset_search_selection = True
+            st.success(f"Aggiunti {len(df_to_add)} articoli al paniere.")
+            st.rerun()
+        else:
+            st.info("Seleziona almeno un articolo dalla griglia.")
+
+# =========================
+# TAB: PANIERE – con selezione massiva
+# =========================
+with tab_basket:
+    st.subheader("🧺 Prodotti selezionati")
+    basket = st.session_state.basket.copy()
+    st.caption(f"Nel paniere: {len(basket)} articoli")
+
+    if len(basket) > 0:
+        csel_all_b, _ = st.columns([1, 5])
+        select_all_b = csel_all_b.checkbox("Seleziona tutto il paniere", value=False, key="basket_select_all")
+
+        basket_display = basket.copy()
+        basket_display.insert(0, "rm", False if st.session_state.reset_basket_selection else select_all_b)
+        basket_display.insert(1, "•", ["🟦" if (select_all_b and not st.session_state.reset_basket_selection) else "" for _ in range(len(basket_display))])
+
+        edited_basket = st.data_editor(
+            basket_display,
+            hide_index=True,
+            use_container_width=True,
+            num_rows="fixed",
+            column_config={
+                "rm": st.column_config.CheckboxColumn(label="", help="Seleziona per rimuovere", width="small"),
+                "•": st.column_config.TextColumn(label="", width=40),
+                "codice": st.column_config.TextColumn(width=110),
+                "prodotto": st.column_config.TextColumn(width=380),
+                "categoria": st.column_config.TextColumn(width=160),
+                "tipologia": st.column_config.TextColumn(width=160),
+                "provenienza": st.column_config.TextColumn(width=160),
+                "prezzo": st.column_config.NumberColumn(format="€ %.2f", width=120),
+            },
+            disabled=["•", "codice", "prodotto", "categoria", "tipologia", "provenienza", "prezzo"],
+            key="basket_editor",
+        )
+
+        st.divider()
+        c1, c2, c3, c4 = st.columns([1, 1, 1, 1])
+        remove_btn = c1.button("🗑️ Rimuovi selezionati", type="primary")
+        clear_btn = c2.button("♻️ Svuota paniere")
+        xlsx_btn = c3.button("⬇️ Esporta Excel")
+        pdf_btn = c4.button("⬇️ Crea PDF")
+
+        if remove_btn:
+            to_remove = set(edited_basket.loc[edited_basket["rm"].fillna(False), "codice"].tolist())
+            if to_remove:
+                st.session_state.basket = basket[~basket["codice"].isin(to_remove)].reset_index(drop=True)
+                st.session_state.reset_basket_selection = True
+                st.success("Rimossi articoli selezionati.")
+                st.rerun()
+            else:
+                st.info("Seleziona almeno un articolo da rimuovere.")
+
+        if clear_btn:
+            with st.expander("Conferma svuotamento paniere", expanded=True):
+                confirm = st.checkbox("Confermo di voler svuotare completamente il paniere.")
+                do_clear = st.button("Svuota ora", type="primary", disabled=not confirm)
+                if do_clear:
+                    st.session_state.basket = pd.DataFrame(columns=DISPLAY_COLUMNS)
+                    st.session_state.reset_basket_selection = True
+                    st.success("Paniere svuotato.")
+                    st.rerun()
+
+        if xlsx_btn:
+            xbuf = make_excel(basket)
+            st.download_button(
+                "Scarica Excel",
+                data=xbuf,
+                file_name="prodotti_selezionati.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+
+        if pdf_btn:
+            pbuf = make_pdf(basket)
+            st.download_button(
+                "Scarica PDF",
+                data=pbuf,
+                file_name="prodotti_selezionati.pdf",
+                mime="application/pdf",
+            )
+
     else:
-        st.info("Seleziona almeno un prodotto.")
-
-# --- Paniere ---
-st.subheader("🧺 Prodotti selezionati")
-if not st.session_state.basket.empty:
-    st.dataframe(st.session_state.basket)
-    if st.button("Svuota paniere"):
-        st.session_state.basket = pd.DataFrame(columns=DISPLAY_COLUMNS)
-        st.success("Paniere svuotato.")
-    if st.button("Esporta Excel"):
-        st.download_button("Scarica Excel", data=make_excel(st.session_state.basket), file_name="prodotti_selezionati.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    if st.button("Crea PDF"):
-        st.download_button("Scarica PDF", data=make_pdf(st.session_state.basket), file_name="prodotti_selezionati.pdf", mime="application/pdf")
-else:
-    st.info("Il paniere è vuoto.")
+        st.info("Il paniere è vuoto. Aggiungi articoli dalla scheda 'Ricerca'.")
