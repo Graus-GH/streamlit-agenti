@@ -146,6 +146,14 @@ def adaptive_price_bounds(df: pd.DataFrame) -> Tuple[float, float]:
     return 0.0, 0.01
 
 
+def with_fw_prefix(df: pd.DataFrame) -> pd.DataFrame:
+    """Ritorna una copia con '⏳ ' prefisso su 'prodotto' quando is_fw=True."""
+    d = df.copy()
+    if "is_fw" in d.columns:
+        d["prodotto"] = np.where(d["is_fw"], "⏳ " + d["prodotto"].astype(str), d["prodotto"])
+    return d
+
+
 # =========================
 # THEME TWEAKS (pulsanti #005caa)
 # =========================
@@ -166,7 +174,8 @@ st.markdown(
 # STATE
 # =========================
 if "basket" not in st.session_state:
-    st.session_state.basket = pd.DataFrame(columns=DISPLAY_COLUMNS)
+    # includo anche is_fw per poter mantenere l'informazione nel paniere
+    st.session_state.basket = pd.DataFrame(columns=DISPLAY_COLUMNS + ["is_fw"])
 if "res_select_all_toggle" not in st.session_state:
     st.session_state.res_select_all_toggle = False
 if "basket_select_all_toggle" not in st.session_state:
@@ -186,6 +195,7 @@ if "include_fw" not in st.session_state:
 # =========================
 with st.spinner("Caricamento dati…"):
     df_base = load_data(CSV_URL)
+df_base["is_fw"] = False  # marca la fonte base
 
 st.title("📦✨GRAUS Proposta+")
 
@@ -203,14 +213,14 @@ with tab_search:
             placeholder="Es. 'riesling alto adige 0,75'",
         )
 
-        # ✅ Checkbox Fine Wines (persistente)
+        # ✅ Checkbox Fine Wines (persistente) con testo aggiornato
         st.checkbox(
-            "Includi FINE WINES (disponibilità salvo conferma e almeno 3 settimane per consegna)",
+            "Includi FINE WINES (⏳disponibilità salvo conferma e almeno 3 settimane per consegna)",
             value=st.session_state.include_fw,
             key="include_fw",
         )
 
-        # 🔘 Submit obbligatorio per evitare warning "Missing Submit Button"
+        # 🔘 Submit del form
         submitted = st.form_submit_button("Cerca")
 
     # Costruisci il dataset in base allo stato del checkbox (persistente)
@@ -218,6 +228,7 @@ with tab_search:
     if st.session_state.include_fw:
         try:
             df_fw = load_data(FW_CSV_URL)
+            df_fw["is_fw"] = True  # marca FW
             df_all = pd.concat([df_all, df_fw], ignore_index=True)
         except requests.exceptions.HTTPError as e:
             st.warning(
@@ -227,7 +238,7 @@ with tab_search:
             )
             st.caption(f"Dettaglio: {e}")
 
-    df_all = df_all[DISPLAY_COLUMNS].copy()
+    # Nota: manteniamo 'is_fw' ma mostriamo solo DISPLAY_COLUMNS nelle griglie
 
     # Filtraggio testuale
     tokens = tokenize_query(q) if q else []
@@ -237,6 +248,23 @@ with tab_search:
         else pd.Series(True, index=df_all.index)
     )
     df_after_text = df_all.loc[mask_text]
+
+    # Badge rosso se i FINE WINES sono inclusi
+    if st.session_state.include_fw:
+        st.markdown(
+            """
+<span style="
+display:inline-block;
+background:#dc2626;
+color:#fff;
+padding:6px 10px;
+border-radius:8px;
+font-weight:600;">
+FINE WINES inclusi ⏳
+</span>
+""",
+            unsafe_allow_html=True,
+        )
 
     # Prezzo dinamico
     dyn_min, dyn_max = adaptive_price_bounds(df_after_text)
@@ -272,9 +300,10 @@ with tab_search:
         st.session_state.reset_res_selection = not st.session_state.res_select_all_toggle
         st.rerun()
 
-    # Griglia
+    # Griglia (prefisso ⏳ sui FW in display)
     default_sel = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
-    df_res_display = df_res.copy()
+    df_res_display = with_fw_prefix(df_res)
+    df_res_display = df_res_display[DISPLAY_COLUMNS].copy()
     df_res_display.insert(0, "sel", default_sel)
 
     edited_res = st.data_editor(
@@ -313,6 +342,7 @@ with tab_search:
         selected_mask = edited_res["sel"].fillna(False)
         selected_codes = set(edited_res.loc[selected_mask, "codice"].tolist())
         if selected_codes:
+            # preservo anche is_fw nel paniere
             df_to_add = df_res[df_res["codice"].isin(selected_codes)]
             basket = st.session_state.basket
             combined = pd.concat([basket, df_to_add], ignore_index=True)
@@ -344,7 +374,8 @@ with tab_basket:
         st.rerun()
 
     default_sel_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
-    basket_display = basket.copy()
+    basket_display = with_fw_prefix(basket)  # prefisso ⏳ anche nel paniere
+    basket_display = basket_display[DISPLAY_COLUMNS].copy()
     basket_display.insert(0, "rm", default_sel_b)
 
     edited_basket = st.data_editor(
@@ -371,12 +402,15 @@ with tab_basket:
     remove_btn = c1.button("🗑️ Rimuovi selezionati", type="primary")
 
     # Ordina prima di esportare
-    basket_sorted = basket.sort_values(
+    basket_sorted = st.session_state.basket.sort_values(
         ["categoria", "tipologia", "provenienza", "prodotto"], kind="stable"
     ).reset_index(drop=True)
 
+    # Export con prefisso ⏳ per i FW
+    export_df = with_fw_prefix(basket_sorted)[DISPLAY_COLUMNS].copy()
+
     # Download diretto: Excel e PDF
-    xbuf = make_excel(basket_sorted)
+    xbuf = make_excel(export_df)
     c2.download_button(
         "⬇️ Esporta Excel",
         data=xbuf,
@@ -384,7 +418,7 @@ with tab_basket:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
-    pbuf = make_pdf(basket_sorted)
+    pbuf = make_pdf(export_df)
     c3.download_button(
         "⬇️ Crea PDF",
         data=pbuf,
@@ -395,7 +429,9 @@ with tab_basket:
     if remove_btn:
         to_remove = set(edited_basket.loc[edited_basket["rm"].fillna(False), "codice"].tolist())
         if to_remove:
-            st.session_state.basket = basket[~basket["codice"].isin(to_remove)].reset_index(drop=True)
+            st.session_state.basket = st.session_state.basket[
+                ~st.session_state.basket["codice"].isin(to_remove)
+            ].reset_index(drop=True)
             st.session_state.basket_select_all_toggle = False
             st.session_state.reset_basket_selection = True
             st.success("Rimossi articoli selezionati.")
