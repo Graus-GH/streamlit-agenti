@@ -237,8 +237,11 @@ with tab_search:
             "prezzo": st.column_config.NumberColumn(label="prezzo", format="€ %.2f", width=120),
         },
         disabled=["•", "codice", "prodotto", "categoria", "tipologia", "provenienza", "prezzo"],
-        key="res_editor",
+        key=f"res_editor_{int(st.session_state.reset_search_selection)}",
     )
+
+    if st.session_state.reset_search_selection:
+        st.session_state.reset_search_selection = False
 
     st.divider()
     c_add, c_clear = st.columns([1, 1])
