@@ -59,11 +59,17 @@ def load_data(url: str) -> pd.DataFrame:
 
     df["prezzo"] = df["prezzo"].apply(to_float)
 
-    # Codice numerico senza separatori/decimali
+    # Codice: rimuovi decimali/zeri finali e qualunque separatore
     def normalize_code(x: str) -> str:
-        s = re.sub("[^0-9]", "", str(x))  # solo cifre
-        s = s.lstrip("0") or "0"          # aspetto numerico
-        return s
+        s = str(x).strip().replace(" ", "").replace(",", ".")
+        m = re.search(r"\d+(?:\.\d+)?", s)
+        if m:
+            try:
+                return str(int(float(m.group(0))))  # 123.00 -> 123 ; 123,45 -> 123
+            except Exception:
+                pass
+        digits = re.sub(r"\D", "", s)            # fallback: solo cifre
+        return digits.lstrip("0") or "0"
 
     df["codice"] = df["codice"].astype(str).apply(normalize_code)
 
@@ -100,7 +106,6 @@ def make_pdf(df: pd.DataFrame) -> bytes:
     pdf.set_font("Helvetica", "B", 10)
     headers = DISPLAY_COLUMNS
     col_widths = [35, 120, 40, 40, 40, 25]
-
     for h, w in zip(headers, col_widths):
         pdf.cell(w, 8, h.upper(), border=1)
     pdf.ln(8)
@@ -156,14 +161,24 @@ st.markdown(
 # =========================
 if "basket" not in st.session_state:
     st.session_state.basket = pd.DataFrame(columns=DISPLAY_COLUMNS)
-if "res_select_all_toggle" not in st.session_state:
-    st.session_state.res_select_all_toggle = False
-if "basket_select_all_toggle" not in st.session_state:
-    st.session_state.basket_select_all_toggle = False
-if "reset_res_selection" not in st.session_state:
-    st.session_state.reset_res_selection = False
-if "reset_basket_selection" not in st.session_state:
-    st.session_state.reset_basket_selection = False
+
+# Stato selezioni risultati (per far funzionare seleziona/deseleziona sempre)
+if "res_selected_codes" not in st.session_state:
+    st.session_state.res_selected_codes = set()
+# Forza il refresh della data_editor quando cambiamo selezioni globali
+if "res_editor_version" not in st.session_state:
+    st.session_state.res_editor_version = 0
+# Messaggio persistente dopo aggiunta
+if "last_add_count" not in st.session_state:
+    st.session_state.last_add_count = 0
+
+# Stato selezioni paniere (se vuoi mantenere anche selezione massiva nel paniere)
+if "basket_select_all" not in st.session_state:
+    st.session_state.basket_select_all = False
+if "basket_editor_version" not in st.session_state:
+    st.session_state.basket_editor_version = 0
+if "basket_selected_codes" not in st.session_state:
+    st.session_state.basket_selected_codes = set()
 
 # =========================
 # DATA
@@ -175,10 +190,10 @@ df_all = df_all[DISPLAY_COLUMNS].copy()
 
 st.title("🔎 Ricerca articoli & 🧺 Prodotti selezionati")
 
-tab_search, tab_basket = st.tabs(["Ricerca", "Prodotti selezionati"]) 
+tab_search, tab_basket = st.tabs(["Ricerca", "Prodotti selezionati"])
 
 # =========================
-# TAB: RICERCA – form, filtro prezzo dinamico, selezione massiva
+# TAB: RICERCA
 # =========================
 with tab_search:
     with st.form("search_form", clear_on_submit=False):
@@ -189,19 +204,15 @@ with tab_search:
         tokens = tokenize_query(q) if q else []
         mask_text = (
             df_all.apply(lambda r: row_matches(r, tokens, SEARCH_FIELDS), axis=1)
-            if tokens
-            else pd.Series(True, index=df_all.index)
+            if tokens else pd.Series(True, index=df_all.index)
         )
         df_after_text = df_all.loc[mask_text]
 
+        # Filtro prezzo dinamico + input manuali
         dyn_min, dyn_max = adaptive_price_bounds(df_after_text)
         c1, c2, c3 = st.columns([1, 1, 2])
-        min_price_input = c1.number_input(
-            "Prezzo min", min_value=0.0, value=float(dyn_min), step=0.1, format="%.2f"
-        )
-        max_price_input = c2.number_input(
-            "Prezzo max", min_value=0.01, value=float(dyn_max), step=0.1, format="%.2f"
-        )
+        min_price_input = c1.number_input("Prezzo min", min_value=0.0, value=float(dyn_min), step=0.1, format="%.2f")
+        max_price_input = c2.number_input("Prezzo max", min_value=0.01, value=float(dyn_max), step=0.1, format="%.2f")
         max_for_slider = max(min_price_input, max_price_input)
         price_range = c3.slider(
             "Slider prezzo (sincronizzato)",
@@ -215,26 +226,27 @@ with tab_search:
 
         submitted = st.form_submit_button("Cerca")
 
+        # se cambia la ricerca, azzera il messaggio persistente
+        if submitted:
+            st.session_state.last_add_count = 0
+
     mask_price = df_after_text["prezzo"].fillna(0.0).between(min_price, max_price)
     df_res = df_after_text.loc[mask_price].reset_index(drop=True)
 
     st.caption(f"Risultati: {len(df_res)}")
 
     # Pulsanti selezione globale
-    csel_all, cdesel_all, _ = st.columns([1.4, 1.8, 6])
+    csel_all, cdesel_all, _ = st.columns([1.6, 2.0, 6])
     if csel_all.button("Seleziona tutti i risultati"):
-        st.session_state.res_select_all_toggle = True
-        st.session_state.reset_res_selection = False
-        st.rerun()
+        st.session_state.res_selected_codes = set(df_res["codice"])
+        st.session_state.res_editor_version += 1
     if cdesel_all.button("Deseleziona tutti i risultati"):
-        st.session_state.res_select_all_toggle = False
-        st.session_state.reset_res_selection = True
-        st.rerun()
+        st.session_state.res_selected_codes.clear()
+        st.session_state.res_editor_version += 1
 
-    # Griglia con checkbox
-    default_sel = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
+    # Griglia con checkbox: stato derivato dallo set in sessione
     df_res_display = df_res.copy()
-    df_res_display.insert(0, "sel", default_sel)
+    df_res_display.insert(0, "sel", df_res["codice"].isin(st.session_state.res_selected_codes))
 
     edited_res = st.data_editor(
         df_res_display,
@@ -251,31 +263,39 @@ with tab_search:
             "prezzo": st.column_config.NumberColumn(label="prezzo", format="€ %.2f", width=120),
         },
         disabled=["codice", "prodotto", "categoria", "tipologia", "provenienza", "prezzo"],
-        key="res_editor",
+        key=f"res_editor_{st.session_state.res_editor_version}",
+    )
+
+    # Aggiorna lo stato selezionati dalle spunte correnti
+    st.session_state.res_selected_codes = set(
+        edited_res.loc[edited_res["sel"].fillna(False), "codice"].tolist()
     )
 
     st.divider()
     add_btn = st.button("➕ Aggiungi selezionati al paniere", type="primary")
 
     if add_btn:
-        selected_mask = edited_res["sel"].fillna(False)
-        selected_codes = set(edited_res.loc[selected_mask, "codice"].tolist())
-        if selected_codes:
-            df_to_add = df_res[df_res["codice"].isin(selected_codes)]
+        if st.session_state.res_selected_codes:
+            df_to_add = df_res[df_res["codice"].isin(st.session_state.res_selected_codes)]
             basket = st.session_state.basket
             combined = pd.concat([basket, df_to_add], ignore_index=True)
             combined = combined.drop_duplicates(subset=["codice"]).reset_index(drop=True)
             st.session_state.basket = combined
-            # reset selezioni dopo aggiunta
-            st.session_state.res_select_all_toggle = False
-            st.session_state.reset_res_selection = True
-            st.success(f"Aggiunti {len(df_to_add)} articoli al paniere.")
-            st.rerun()
+
+            # reset selezioni (senza rerun) e messaggio persistente
+            st.session_state.res_selected_codes.clear()
+            st.session_state.res_editor_version += 1
+            st.session_state.last_add_count = len(df_to_add)
+
         else:
             st.info("Seleziona almeno un articolo dalla griglia.")
 
+    # Messaggio di conferma persistente (resta finché non fai una nuova ricerca/azione)
+    if st.session_state.last_add_count:
+        st.success(f"Aggiunti {st.session_state.last_add_count} articoli al paniere.")
+
 # =========================
-# TAB: PANIERE – selezione massiva, export
+# TAB: PANIERE
 # =========================
 with tab_basket:
     st.subheader("🧺 Prodotti selezionati")
@@ -285,17 +305,14 @@ with tab_basket:
     if len(basket) > 0:
         csel_all_b, cdesel_all_b, _ = st.columns([1.6, 2.0, 6])
         if csel_all_b.button("Seleziona tutto il paniere"):
-            st.session_state.basket_select_all_toggle = True
-            st.session_state.reset_basket_selection = False
-            st.rerun()
+            st.session_state.basket_selected_codes = set(basket["codice"])
+            st.session_state.basket_editor_version += 1
         if cdesel_all_b.button("Deseleziona tutto il paniere"):
-            st.session_state.basket_select_all_toggle = False
-            st.session_state.reset_basket_selection = True
-            st.rerun()
+            st.session_state.basket_selected_codes.clear()
+            st.session_state.basket_editor_version += 1
 
-        default_sel_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
         basket_display = basket.copy()
-        basket_display.insert(0, "rm", default_sel_b)
+        basket_display.insert(0, "rm", basket["codice"].isin(st.session_state.basket_selected_codes))
 
         edited_basket = st.data_editor(
             basket_display,
@@ -312,7 +329,12 @@ with tab_basket:
                 "prezzo": st.column_config.NumberColumn(format="€ %.2f", width=120),
             },
             disabled=["codice", "prodotto", "categoria", "tipologia", "provenienza", "prezzo"],
-            key="basket_editor",
+            key=f"basket_editor_{st.session_state.basket_editor_version}",
+        )
+
+        # aggiorna selezioni correnti
+        st.session_state.basket_selected_codes = set(
+            edited_basket.loc[edited_basket["rm"].fillna(False), "codice"].tolist()
         )
 
         st.divider()
@@ -323,13 +345,12 @@ with tab_basket:
         pdf_btn = c4.button("⬇️ Crea PDF")
 
         if remove_btn:
-            to_remove = set(edited_basket.loc[edited_basket["rm"].fillna(False), "codice"].tolist())
+            to_remove = st.session_state.basket_selected_codes
             if to_remove:
                 st.session_state.basket = basket[~basket["codice"].isin(to_remove)].reset_index(drop=True)
-                st.session_state.basket_select_all_toggle = False
-                st.session_state.reset_basket_selection = True
+                st.session_state.basket_selected_codes.clear()
+                st.session_state.basket_editor_version += 1
                 st.success("Rimossi articoli selezionati.")
-                st.rerun()
             else:
                 st.info("Seleziona almeno un articolo da rimuovere.")
 
@@ -339,10 +360,9 @@ with tab_basket:
                 do_clear = st.button("Svuota ora", type="primary", disabled=not confirm)
                 if do_clear:
                     st.session_state.basket = pd.DataFrame(columns=DISPLAY_COLUMNS)
-                    st.session_state.basket_select_all_toggle = False
-                    st.session_state.reset_basket_selection = True
+                    st.session_state.basket_selected_codes.clear()
+                    st.session_state.basket_editor_version += 1
                     st.success("Paniere svuotato.")
-                    st.rerun()
 
         if xlsx_btn:
             xbuf = make_excel(basket)
