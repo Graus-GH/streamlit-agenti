@@ -21,7 +21,7 @@ div[data-testid="stForm"] div[data-testid="stCheckbox"] > label {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 6px 10px; /* più compatto */
   border-radius: 8px;
   border: 1px solid transparent;
   box-sizing: border-box;
@@ -34,7 +34,7 @@ div[data-testid="stForm"] div[data-testid="stCheckbox"] > label:has(input:checke
 }
 /* Checkbox un filo più grande */
 div[data-testid="stForm"] div[data-testid="stCheckbox"] input[type="checkbox"] {
-  transform: scale(1.15);
+  transform: scale(1.1);
 }
 /* Primary button brand */
 .stButton > button[kind="primary"] {
@@ -81,7 +81,6 @@ def load_data(url: str) -> pd.DataFrame:
     for c in ["prodotto", "categoria", "tipologia", "provenienza"]:
         df[c] = df[c].astype(str).fillna("").str.strip()
 
-    # Prezzo -> float (gestisce 1.234,56 e 1234,56)
     def to_float(x):
         if pd.isna(x):
             return np.nan
@@ -96,7 +95,6 @@ def load_data(url: str) -> pd.DataFrame:
             return np.nan
     df["prezzo"] = df["prezzo"].apply(to_float)
 
-    # Codice numerico senza “00” finali
     def normalize_code(x: str) -> str:
         s = re.sub("[^0-9]", "", str(x))
         s = s.lstrip("0") or "0"
@@ -148,26 +146,22 @@ def make_excel(df: pd.DataFrame) -> bytes:
     ws = wb.active
     ws.title = "Prodotti selezionati"
 
-    # Intestazioni
     for col_idx, col_name in enumerate(df.columns, start=1):
         cell = ws.cell(row=1, column=col_idx, value=col_name.upper())
         cell.font = Font(name="Corbel", size=12, bold=True)
         cell.alignment = Alignment(horizontal="right" if col_name.lower()=="prezzo" else "left")
 
-    # Dati
     for r_idx, row in enumerate(df.itertuples(index=False), start=2):
         for c_idx, value in enumerate(row, start=1):
             cell = ws.cell(row=r_idx, column=c_idx, value=value)
             cell.font = Font(name="Corbel", size=12)
             cell.alignment = Alignment(horizontal="right" if df.columns[c_idx-1].lower()=="prezzo" else "left")
 
-    # Larghezze
     for col_idx, col_cells in enumerate(ws.columns, start=1):
         max_len = max(len(str(cell.value)) if cell.value is not None else 0 for cell in col_cells)
         ws.column_dimensions[get_column_letter(col_idx)].width = max_len + 2
 
     ws.freeze_panes = "A2"
-
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
@@ -239,7 +233,17 @@ with st.spinner("Caricamento dati…"):
     df_base = load_data(CSV_URL)
 df_base["is_fw"] = False
 
-st.title("✨GRAUS Proposta Clienti")
+# =========================
+# HEADER con logo a destra
+# =========================
+h1, h2 = st.columns([4, 1])
+with h1:
+    st.title("✨GRAUS Proposta Clienti")
+with h2:
+    st.image(
+        "https://res.cloudinary.com/dct4tiqsl/image/upload/v1754315051/LogoGraus_j7d5jo.png",
+        width=130,  # non troppo grande
+    )
 
 basket_len = len(st.session_state.basket)
 tab_search, tab_basket = st.tabs(["Ricerca", f"Prodotti selezionati ({basket_len})"])
@@ -249,7 +253,7 @@ tab_search, tab_basket = st.tabs(["Ricerca", f"Prodotti selezionati ({basket_len
 # =========================
 with tab_search:
     with st.form("search_form", clear_on_submit=False):
-        # Layout responsive: ricerca a sinistra, filtri prezzo a destra
+        # Layout responsive: ricerca a sinistra, filtri prezzo compatti a destra
         col_search, col_price = st.columns([2, 1])
 
         # --- Colonna sinistra: Ricerca + FW ---
@@ -264,7 +268,7 @@ with tab_search:
                 key="include_fw",
             )
 
-        # Costruisci dataset PARZIALE per calcolare i bound dinamici dei prezzi
+        # Costruisci dataset PARZIALE per bound dinamici
         df_all = df_base.copy()
         if st.session_state.include_fw:
             try:
@@ -281,29 +285,31 @@ with tab_search:
             if tokens else pd.Series(True, index=df_all.index)
         )
         df_after_text = df_all.loc[mask_text]
-
         dyn_min, dyn_max = adaptive_price_bounds(df_after_text)
 
-        # --- Colonna destra: Box filtri prezzo ---
+        # --- Colonna destra: Box filtri prezzo compatti ---
         with col_price:
             with st.container(border=True):
-                st.markdown("**Filtri prezzo**")
-                min_price_input = st.number_input(
-                    "Prezzo min", min_value=0.0, value=float(dyn_min), step=0.1, format="%.2f"
-                )
-                max_price_input = st.number_input(
-                    "Prezzo max", min_value=0.01, value=float(dyn_max), step=0.1, format="%.2f"
-                )
+                cmin, cmax = st.columns(2)
+                with cmin:
+                    min_price_input = st.number_input(
+                        "Min", min_value=0.0, value=float(dyn_min), step=0.1, format="%.2f"
+                    )
+                with cmax:
+                    max_price_input = st.number_input(
+                        "Max", min_value=0.01, value=float(dyn_max), step=0.1, format="%.2f"
+                    )
                 max_for_slider = max(min_price_input, max_price_input)
                 price_range = st.slider(
-                    "Range",
+                    "Range",  # etichetta minima; la nascondiamo per compattezza
                     min_value=0.0,
                     max_value=max(0.01, round(max_for_slider, 2)),
                     value=(float(min_price_input), float(max_price_input)),
                     step=0.1,
+                    label_visibility="collapsed",
                 )
 
-        # Valori finali selezionati
+        # Valori finali filtranti
         min_price = min(price_range[0], price_range[1])
         max_price = max(price_range[0], price_range[1])
 
