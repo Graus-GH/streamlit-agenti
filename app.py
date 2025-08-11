@@ -11,36 +11,44 @@ from fpdf import FPDF
 st.set_page_config(page_title="✨GRAUS Proposta Clienti", layout="wide")
 
 # =========================
-# CSS – checkbox arancione quando attivo + primary button
+# CSS – stile compatto + checkbox arancione quando attivo
 # =========================
 st.markdown("""
 <style>
-/* Checkbox a tutta larghezza */
+/* Checkbox a tutta larghezza e compatto */
 div[data-testid="stForm"] div[data-testid="stCheckbox"] > label {
   width: 100%;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px; /* più compatto */
-  border-radius: 8px;
+  padding: 6px 10px;
+  border-radius: 10px;
   border: 1px solid transparent;
   box-sizing: border-box;
 }
 /* Sfondo arancione solo se spuntato */
 div[data-testid="stForm"] div[data-testid="stCheckbox"] > label:has(input:checked) {
-  background: #ffedd5;
+  background: #ffedd5;   /* arancione chiaro */
   color: #7c2d12;
-  border-color: #fdba74;
+  border-color: #fdba74; /* arancione medio */
 }
-/* Checkbox un filo più grande */
+/* Checkbox leggermente più grande */
 div[data-testid="stForm"] div[data-testid="stCheckbox"] input[type="checkbox"] {
   transform: scale(1.1);
 }
-/* Primary button brand */
+
+/* Pulsanti primary brand */
 .stButton > button[kind="primary"] {
   background-color: #005caa;
   border-color: #005caa;
   color: #fff;
+}
+
+/* Pill riepilogo filtri */
+.pill {
+  display:inline-flex;align-items:center;gap:6px;
+  padding:4px 8px;border-radius:999px;border:1px solid #E5E7EB;
+  background:#F3F4F6;font-size:12px;margin-right:6px;margin-bottom:6px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -225,6 +233,8 @@ if "flash" not in st.session_state:
     st.session_state.flash = None
 if "include_fw" not in st.session_state:
     st.session_state.include_fw = False
+if "q" not in st.session_state:
+    st.session_state.q = ""
 
 # =========================
 # DATA
@@ -242,7 +252,7 @@ with h1:
 with h2:
     st.image(
         "https://res.cloudinary.com/dct4tiqsl/image/upload/v1754315051/LogoGraus_j7d5jo.png",
-        width=130,  # non troppo grande
+        width=130,
     )
 
 basket_len = len(st.session_state.basket)
@@ -253,14 +263,16 @@ tab_search, tab_basket = st.tabs(["Ricerca", f"Prodotti selezionati ({basket_len
 # =========================
 with tab_search:
     with st.form("search_form", clear_on_submit=False):
-        # Layout responsive: ricerca a sinistra, filtri prezzo compatti a destra
-        col_search, col_price = st.columns([2, 1])
+        # Layout: sinistra Ricerca+FW, destra Box Prezzi
+        col_search, col_price = st.columns([2.2, 1])
 
-        # --- Colonna sinistra: Ricerca + FW ---
+        # --- Sinistra: ricerca & FW ---
         with col_search:
-            q = st.text_input(
+            st.session_state.q = st.text_input(
                 "Cerca (multi-parola) su: codice, prodotto, categoria, tipologia, provenienza",
+                value=st.session_state.q,
                 placeholder="Es. 'riesling alto adige 0,75'",
+                key="q_input",
             )
             st.checkbox(
                 "Includi FINE WINES (⏳ disponibilità salvo conferma e almeno 3 settimane per consegna)",
@@ -268,7 +280,7 @@ with tab_search:
                 key="include_fw",
             )
 
-        # Costruisci dataset PARZIALE per bound dinamici
+        # Dataset base (per popolare filtri e bound prezzo)
         df_all = df_base.copy()
         if st.session_state.include_fw:
             try:
@@ -279,41 +291,88 @@ with tab_search:
                 st.warning("⚠️ Impossibile caricare il foglio Fine Wines.")
                 st.caption(f"Dettaglio: {e}")
 
-        tokens = tokenize_query(q) if q else []
+        # --- Filtri avanzati opzionali ---
+        with st.expander("Altri filtri (opzionale)", expanded=False):
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                flt_cat = st.multiselect(
+                    "Categoria", sorted([x for x in df_all["categoria"].dropna().unique().tolist() if x]),
+                    key="flt_cat"
+                )
+            with c2:
+                flt_tip = st.multiselect(
+                    "Tipologia", sorted([x for x in df_all["tipologia"].dropna().unique().tolist() if x]),
+                    key="flt_tip"
+                )
+            with c3:
+                flt_prov = st.multiselect(
+                    "Provenienza", sorted([x for x in df_all["provenienza"].dropna().unique().tolist() if x]),
+                    key="flt_prov"
+                )
+
+        # Applica testo + filtri avanzati (per calcolare bounds prezzo coerenti)
+        tokens = tokenize_query(st.session_state.q) if st.session_state.q else []
         mask_text = (
             df_all.apply(lambda r: row_matches(r, tokens, SEARCH_FIELDS), axis=1)
             if tokens else pd.Series(True, index=df_all.index)
         )
-        df_after_text = df_all.loc[mask_text]
-        dyn_min, dyn_max = adaptive_price_bounds(df_after_text)
+        mask_adv = (
+            (df_all["categoria"].isin(st.session_state.get("flt_cat", [])) if st.session_state.get("flt_cat") else True)
+            & (df_all["tipologia"].isin(st.session_state.get("flt_tip", [])) if st.session_state.get("flt_tip") else True)
+            & (df_all["provenienza"].isin(st.session_state.get("flt_prov", [])) if st.session_state.get("flt_prov") else True)
+        )
+        df_after_text = df_all.loc[mask_text & mask_adv]
 
-        # --- Colonna destra: Box filtri prezzo compatti ---
+        # --- Destra: box prezzi compatto ---
+        dyn_min, dyn_max = adaptive_price_bounds(df_after_text)
         with col_price:
             with st.container(border=True):
-                cmin, cmax = st.columns(2)
-                with cmin:
-                    min_price_input = st.number_input(
-                        "Min", min_value=0.0, value=float(dyn_min), step=0.1, format="%.2f"
-                    )
-                with cmax:
-                    max_price_input = st.number_input(
-                        "Max", min_value=0.01, value=float(dyn_max), step=0.1, format="%.2f"
-                    )
+                cmn, cmx = st.columns(2)
+                with cmn:
+                    min_price_input = st.number_input("Min", min_value=0.0, value=float(dyn_min), step=0.1, format="%.2f")
+                with cmx:
+                    max_price_input = st.number_input("Max", min_value=0.01, value=float(dyn_max), step=0.1, format="%.2f")
                 max_for_slider = max(min_price_input, max_price_input)
                 price_range = st.slider(
-                    "Range",  # etichetta minima; la nascondiamo per compattezza
-                    min_value=0.0,
-                    max_value=max(0.01, round(max_for_slider, 2)),
-                    value=(float(min_price_input), float(max_price_input)),
-                    step=0.1,
-                    label_visibility="collapsed",
+                    "Range", min_value=0.0, max_value=max(0.01, round(max_for_slider, 2)),
+                    value=(float(min_price_input), float(max_price_input)), step=0.1, label_visibility="collapsed"
                 )
 
-        # Valori finali filtranti
+        # Valori finali prezzo
         min_price = min(price_range[0], price_range[1])
         max_price = max(price_range[0], price_range[1])
 
-        submitted = st.form_submit_button("Cerca")
+        # Azioni form
+        cA, cB = st.columns([6, 1])
+        with cA:
+            # Riepilogo filtri attivi (pill)
+            pills = []
+            if st.session_state.q:
+                pills.append(f"<span class='pill'>Testo: {st.session_state.q}</span>")
+            if st.session_state.include_fw:
+                pills.append(f"<span class='pill'>Fine Wines</span>")
+            if st.session_state.get('flt_cat'):
+                pills.append(f"<span class='pill'>Categoria: {', '.join(st.session_state['flt_cat'][:2])}{'…' if len(st.session_state['flt_cat'])>2 else ''}</span>")
+            if st.session_state.get('flt_tip'):
+                pills.append(f"<span class='pill'>Tipologia: {', '.join(st.session_state['flt_tip'][:2])}{'…' if len(st.session_state['flt_tip'])>2 else ''}</span>")
+            if st.session_state.get('flt_prov'):
+                pills.append(f"<span class='pill'>Provenienza: {', '.join(st.session_state['flt_prov'][:2])}{'…' if len(st.session_state['flt_prov'])>2 else ''}</span>")
+            pills.append(f"<span class='pill'>€ {min_price:,.2f} – € {max_price:,.2f}</span>".replace(",", "X").replace(".", ",").replace("X", "."))
+            if pills:
+                st.markdown(" ".join(pills), unsafe_allow_html=True)
+        with cB:
+            reset = st.form_submit_button("Reset")
+            apply_btn = st.form_submit_button("Cerca")
+
+        # Gestione reset
+        if reset:
+            st.session_state.q = ""
+            st.session_state.q_input = ""
+            st.session_state.include_fw = False
+            st.session_state.flt_cat = []
+            st.session_state.flt_tip = []
+            st.session_state.flt_prov = []
+            st.rerun()
 
     # Applica anche il filtro prezzo
     mask_price = df_after_text["prezzo"].fillna(0.0).between(min_price, max_price)
@@ -355,7 +414,7 @@ with tab_search:
     st.divider()
     add_btn = st.button("➕ Aggiungi selezionati al paniere", type="primary")
 
-    # Notifica sotto al bottone
+    # Notifica
     if st.session_state.flash:
         f = st.session_state.flash
         {"success": st.success, "info": st.info, "warning": st.warning, "error": st.error}.get(
@@ -387,7 +446,6 @@ with tab_search:
 with tab_basket:
     basket = st.session_state.basket.copy()
 
-    # Toggle selezione completo paniere
     c_toggle_b, _ = st.columns([3, 7])
     all_on_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
     if c_toggle_b.button("Deseleziona tutto il paniere" if all_on_b else "Seleziona tutto il paniere"):
@@ -397,7 +455,6 @@ with tab_basket:
 
     default_sel_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
 
-    # Prefisso ⏳ in display anche nel paniere
     basket_display = with_fw_prefix(basket)[DISPLAY_COLUMNS].copy()
     basket_display.insert(0, "rm", default_sel_b)
 
@@ -423,15 +480,12 @@ with tab_basket:
     c1, c2, c3 = st.columns([1, 1, 1])
     remove_btn = c1.button("🗑️ Rimuovi selezionati", type="primary")
 
-    # Ordina prima di esportare
     basket_sorted = st.session_state.basket.sort_values(
         ["categoria", "tipologia", "provenienza", "prodotto"], kind="stable"
     ).reset_index(drop=True)
 
-    # Export con prefisso ⏳ per i FW (PDF-safe sostituisce ⏳ -> [FW])
     export_df = with_fw_prefix(basket_sorted)[DISPLAY_COLUMNS].copy()
 
-    # Download diretto: Excel e PDF
     xbuf = make_excel(export_df)
     c2.download_button(
         "⬇️ Esporta Excel",
