@@ -119,6 +119,26 @@ def row_matches(row: pd.Series, tokens: List[str], fields: List[str]) -> bool:
     return all(t.lower() in haystack for t in tokens)
 
 
+def adaptive_price_bounds(df: pd.DataFrame) -> Tuple[float, float]:
+    if df["prezzo"].notna().any():
+        mn = float(np.nanmin(df["prezzo"]))
+        mx = float(np.nanmax(df["prezzo"]))
+        if mn == mx:
+            mx = mn + 0.01
+        return max(0.0, round(mn, 2)), max(0.01, round(mx, 2))
+    return 0.0, 0.01
+
+
+def with_fw_prefix(df: pd.DataFrame) -> pd.DataFrame:
+    d = df.copy()
+    if "is_fw" in d.columns:
+        d["prodotto"] = np.where(d["is_fw"], "⏳ " + d["prodotto"].astype(str), d["prodotto"])
+    return d
+
+
+# =========================
+# EXPORT (Excel/PDF)
+# =========================
 def make_excel(df: pd.DataFrame) -> bytes:
     import openpyxl
     from openpyxl.utils import get_column_letter
@@ -128,24 +148,23 @@ def make_excel(df: pd.DataFrame) -> bytes:
     ws = wb.active
     ws.title = "Prodotti selezionati"
 
-    # intestazioni
+    # Intestazioni
     for col_idx, col_name in enumerate(df.columns, start=1):
         cell = ws.cell(row=1, column=col_idx, value=col_name.upper())
         cell.font = Font(name="Corbel", size=12, bold=True)
         cell.alignment = Alignment(horizontal="right" if col_name.lower()=="prezzo" else "left")
 
-    # dati
+    # Dati
     for r_idx, row in enumerate(df.itertuples(index=False), start=2):
         for c_idx, value in enumerate(row, start=1):
             cell = ws.cell(row=r_idx, column=c_idx, value=value)
             cell.font = Font(name="Corbel", size=12)
             cell.alignment = Alignment(horizontal="right" if df.columns[c_idx-1].lower()=="prezzo" else "left")
 
-    # larghezze
+    # Larghezze
     for col_idx, col_cells in enumerate(ws.columns, start=1):
         max_len = max(len(str(cell.value)) if cell.value is not None else 0 for cell in col_cells)
-        getw = get_column_letter(col_idx)
-        ws.column_dimensions[getw].width = max_len + 2
+        ws.column_dimensions[get_column_letter(col_idx)].width = max_len + 2
 
     ws.freeze_panes = "A2"
 
@@ -195,23 +214,6 @@ def make_pdf(df: pd.DataFrame) -> bytes:
     return bytes(out) if isinstance(out, (bytes, bytearray)) else out.encode("latin-1", "ignore")
 
 
-def adaptive_price_bounds(df: pd.DataFrame) -> Tuple[float, float]:
-    if df["prezzo"].notna().any():
-        mn = float(np.nanmin(df["prezzo"]))
-        mx = float(np.nanmax(df["prezzo"]))
-        if mn == mx:
-            mx = mn + 0.01
-        return max(0.0, round(mn, 2)), max(0.01, round(mx, 2))
-    return 0.0, 0.01
-
-
-def with_fw_prefix(df: pd.DataFrame) -> pd.DataFrame:
-    d = df.copy()
-    if "is_fw" in d.columns:
-        d["prodotto"] = np.where(d["is_fw"], "⏳ " + d["prodotto"].astype(str), d["prodotto"])
-    return d
-
-
 # =========================
 # STATE
 # =========================
@@ -247,52 +249,67 @@ tab_search, tab_basket = st.tabs(["Ricerca", f"Prodotti selezionati ({basket_len
 # =========================
 with tab_search:
     with st.form("search_form", clear_on_submit=False):
-        q = st.text_input(
-            "Cerca (multi-parola) su: codice, prodotto, categoria, tipologia, provenienza",
-            placeholder="Es. 'riesling alto adige 0,75'",
-        )
+        # Layout responsive: ricerca a sinistra, filtri prezzo a destra
+        col_search, col_price = st.columns([2, 1])
 
-        st.checkbox(
-            "Includi FINE WINES (⏳ disponibilità salvo conferma e almeno 3 settimane per consegna)",
-            value=st.session_state.include_fw,
-            key="include_fw",
+        # --- Colonna sinistra: Ricerca + FW ---
+        with col_search:
+            q = st.text_input(
+                "Cerca (multi-parola) su: codice, prodotto, categoria, tipologia, provenienza",
+                placeholder="Es. 'riesling alto adige 0,75'",
+            )
+            st.checkbox(
+                "Includi FINE WINES (⏳ disponibilità salvo conferma e almeno 3 settimane per consegna)",
+                value=st.session_state.include_fw,
+                key="include_fw",
+            )
+
+        # Costruisci dataset PARZIALE per calcolare i bound dinamici dei prezzi
+        df_all = df_base.copy()
+        if st.session_state.include_fw:
+            try:
+                df_fw = load_data(FW_CSV_URL)
+                df_fw["is_fw"] = True
+                df_all = pd.concat([df_all, df_fw], ignore_index=True)
+            except requests.exceptions.HTTPError as e:
+                st.warning("⚠️ Impossibile caricare il foglio Fine Wines.")
+                st.caption(f"Dettaglio: {e}")
+
+        tokens = tokenize_query(q) if q else []
+        mask_text = (
+            df_all.apply(lambda r: row_matches(r, tokens, SEARCH_FIELDS), axis=1)
+            if tokens else pd.Series(True, index=df_all.index)
         )
+        df_after_text = df_all.loc[mask_text]
+
+        dyn_min, dyn_max = adaptive_price_bounds(df_after_text)
+
+        # --- Colonna destra: Box filtri prezzo ---
+        with col_price:
+            with st.container(border=True):
+                st.markdown("**Filtri prezzo**")
+                min_price_input = st.number_input(
+                    "Prezzo min", min_value=0.0, value=float(dyn_min), step=0.1, format="%.2f"
+                )
+                max_price_input = st.number_input(
+                    "Prezzo max", min_value=0.01, value=float(dyn_max), step=0.1, format="%.2f"
+                )
+                max_for_slider = max(min_price_input, max_price_input)
+                price_range = st.slider(
+                    "Range",
+                    min_value=0.0,
+                    max_value=max(0.01, round(max_for_slider, 2)),
+                    value=(float(min_price_input), float(max_price_input)),
+                    step=0.1,
+                )
+
+        # Valori finali selezionati
+        min_price = min(price_range[0], price_range[1])
+        max_price = max(price_range[0], price_range[1])
 
         submitted = st.form_submit_button("Cerca")
 
-    # Dataset in base al checkbox
-    df_all = df_base.copy()
-    if st.session_state.include_fw:
-        try:
-            df_fw = load_data(FW_CSV_URL)
-            df_fw["is_fw"] = True
-            df_all = pd.concat([df_all, df_fw], ignore_index=True)
-        except requests.exceptions.HTTPError as e:
-            st.warning("⚠️ Impossibile caricare il foglio Fine Wines.")
-            st.caption(f"Dettaglio: {e}")
-
-    # Filtri
-    tokens = tokenize_query(q) if q else []
-    mask_text = (
-        df_all.apply(lambda r: row_matches(r, tokens, SEARCH_FIELDS), axis=1)
-        if tokens else pd.Series(True, index=df_all.index)
-    )
-    df_after_text = df_all.loc[mask_text]
-
-    dyn_min, dyn_max = adaptive_price_bounds(df_after_text)
-    c1, c2, c3 = st.columns([1, 1, 2])
-    min_price_input = c1.number_input("Prezzo min", min_value=0.0, value=float(dyn_min), step=0.1, format="%.2f")
-    max_price_input = c2.number_input("Prezzo max", min_value=0.01, value=float(dyn_max), step=0.1, format="%.2f")
-    price_range = c3.slider(
-        "Slider prezzo (sincronizzato)",
-        min_value=0.0,
-        max_value=max(0.01, round(max(min_price_input, max_price_input), 2)),
-        value=(float(min_price_input), float(max_price_input)),
-        step=0.1
-    )
-    min_price = min(price_range[0], price_range[1])
-    max_price = max(price_range[0], price_range[1])
-
+    # Applica anche il filtro prezzo
     mask_price = df_after_text["prezzo"].fillna(0.0).between(min_price, max_price)
     df_res = df_after_text.loc[mask_price].reset_index(drop=True)
 
