@@ -11,11 +11,11 @@ from fpdf import FPDF
 st.set_page_config(page_title="✨GRAUS Proposta Clienti", layout="wide")
 
 # =========================
-# CSS – Checkbox arancione quando attivo
+# CSS – checkbox arancione quando attivo + primary button
 # =========================
 st.markdown("""
 <style>
-/* Stile base del contenitore checkbox */
+/* Checkbox a tutta larghezza */
 div[data-testid="stForm"] div[data-testid="stCheckbox"] > label {
   width: 100%;
   display: flex;
@@ -26,17 +26,21 @@ div[data-testid="stForm"] div[data-testid="stCheckbox"] > label {
   border: 1px solid transparent;
   box-sizing: border-box;
 }
-
-/* Sfondo arancione solo se il checkbox è spuntato */
+/* Sfondo arancione solo se spuntato */
 div[data-testid="stForm"] div[data-testid="stCheckbox"] > label:has(input:checked) {
   background: #ffedd5;
   color: #7c2d12;
   border-color: #fdba74;
 }
-
-/* Ingrandisce leggermente il quadratino */
+/* Checkbox un filo più grande */
 div[data-testid="stForm"] div[data-testid="stCheckbox"] input[type="checkbox"] {
   transform: scale(1.15);
+}
+/* Primary button brand */
+.stButton > button[kind="primary"] {
+  background-color: #005caa;
+  border-color: #005caa;
+  color: #fff;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -77,6 +81,7 @@ def load_data(url: str) -> pd.DataFrame:
     for c in ["prodotto", "categoria", "tipologia", "provenienza"]:
         df[c] = df[c].astype(str).fillna("").str.strip()
 
+    # Prezzo -> float (gestisce 1.234,56 e 1234,56)
     def to_float(x):
         if pd.isna(x):
             return np.nan
@@ -91,6 +96,7 @@ def load_data(url: str) -> pd.DataFrame:
             return np.nan
     df["prezzo"] = df["prezzo"].apply(to_float)
 
+    # Codice numerico senza “00” finali
     def normalize_code(x: str) -> str:
         s = re.sub("[^0-9]", "", str(x))
         s = s.lstrip("0") or "0"
@@ -111,6 +117,82 @@ def tokenize_query(q: str) -> List[str]:
 def row_matches(row: pd.Series, tokens: List[str], fields: List[str]) -> bool:
     haystack = " ".join(str(row[f]) for f in fields).lower()
     return all(t.lower() in haystack for t in tokens)
+
+
+def make_excel(df: pd.DataFrame) -> bytes:
+    import openpyxl
+    from openpyxl.utils import get_column_letter
+    from openpyxl.styles import Font, Alignment
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Prodotti selezionati"
+
+    # intestazioni
+    for col_idx, col_name in enumerate(df.columns, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=col_name.upper())
+        cell.font = Font(name="Corbel", size=12, bold=True)
+        cell.alignment = Alignment(horizontal="right" if col_name.lower()=="prezzo" else "left")
+
+    # dati
+    for r_idx, row in enumerate(df.itertuples(index=False), start=2):
+        for c_idx, value in enumerate(row, start=1):
+            cell = ws.cell(row=r_idx, column=c_idx, value=value)
+            cell.font = Font(name="Corbel", size=12)
+            cell.alignment = Alignment(horizontal="right" if df.columns[c_idx-1].lower()=="prezzo" else "left")
+
+    # larghezze
+    for col_idx, col_cells in enumerate(ws.columns, start=1):
+        max_len = max(len(str(cell.value)) if cell.value is not None else 0 for cell in col_cells)
+        getw = get_column_letter(col_idx)
+        ws.column_dimensions[getw].width = max_len + 2
+
+    ws.freeze_panes = "A2"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.read()
+
+
+def make_pdf(df: pd.DataFrame) -> bytes:
+    def pdf_safe(s: str) -> str:
+        if s is None:
+            return ""
+        s = str(s).replace("⏳", "[FW]")
+        return s.encode("latin-1", "ignore").decode("latin-1")
+
+    pdf = FPDF(orientation="L", unit="mm", format="A4")
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.cell(0, 10, pdf_safe("Prodotti selezionati"), ln=1)
+
+    pdf.set_font("Helvetica", "B", 10)
+    headers = DISPLAY_COLUMNS
+    col_widths = [35, 120, 30, 40, 40, 40]
+    for h, w in zip(headers, col_widths):
+        pdf.cell(w, 8, pdf_safe(h.upper()), border=1)
+    pdf.ln(8)
+
+    pdf.set_font("Helvetica", size=9)
+    for _, r in df.iterrows():
+        cells = [
+            str(r.get("codice", "")),
+            str(r.get("prodotto", ""))[:200],
+            ("" if pd.isna(r.get("prezzo")) else f"{r.get('prezzo'):.2f}"),
+            str(r.get("categoria", "")),
+            str(r.get("tipologia", "")),
+            str(r.get("provenienza", "")),
+        ]
+        for c, w in zip(cells, col_widths):
+            txt = pdf_safe(c.replace("\n", " "))
+            if len(txt) > 80:
+                txt = txt[:77] + "..."
+            pdf.cell(w, 6, txt, border=1)
+        pdf.ln(6)
+
+    out = pdf.output(dest="S")
+    return bytes(out) if isinstance(out, (bytes, bytearray)) else out.encode("latin-1", "ignore")
 
 
 def adaptive_price_bounds(df: pd.DataFrame) -> Tuple[float, float]:
@@ -178,6 +260,7 @@ with tab_search:
 
         submitted = st.form_submit_button("Cerca")
 
+    # Dataset in base al checkbox
     df_all = df_base.copy()
     if st.session_state.include_fw:
         try:
@@ -188,11 +271,11 @@ with tab_search:
             st.warning("⚠️ Impossibile caricare il foglio Fine Wines.")
             st.caption(f"Dettaglio: {e}")
 
+    # Filtri
     tokens = tokenize_query(q) if q else []
     mask_text = (
         df_all.apply(lambda r: row_matches(r, tokens, SEARCH_FIELDS), axis=1)
-        if tokens
-        else pd.Series(True, index=df_all.index)
+        if tokens else pd.Series(True, index=df_all.index)
     )
     df_after_text = df_all.loc[mask_text]
 
@@ -200,7 +283,8 @@ with tab_search:
     c1, c2, c3 = st.columns([1, 1, 2])
     min_price_input = c1.number_input("Prezzo min", min_value=0.0, value=float(dyn_min), step=0.1, format="%.2f")
     max_price_input = c2.number_input("Prezzo max", min_value=0.01, value=float(dyn_max), step=0.1, format="%.2f")
-    price_range = c3.slider("Slider prezzo (sincronizzato)",
+    price_range = c3.slider(
+        "Slider prezzo (sincronizzato)",
         min_value=0.0,
         max_value=max(0.01, round(max(min_price_input, max_price_input), 2)),
         value=(float(min_price_input), float(max_price_input)),
@@ -214,6 +298,7 @@ with tab_search:
 
     st.caption(f"Risultati: {len(df_res)}")
 
+    # Toggle risultati
     c_toggle, _ = st.columns([3, 7])
     all_on = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
     if c_toggle.button("Deseleziona tutti i risultati" if all_on else "Seleziona tutti i risultati"):
@@ -221,6 +306,7 @@ with tab_search:
         st.session_state.reset_res_selection = not st.session_state.res_select_all_toggle
         st.rerun()
 
+    # Griglia risultati con prefisso ⏳ per FW (solo display)
     default_sel = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
     df_res_display = with_fw_prefix(df_res)[DISPLAY_COLUMNS].copy()
     df_res_display.insert(0, "sel", default_sel)
@@ -231,7 +317,7 @@ with tab_search:
         use_container_width=True,
         num_rows="fixed",
         column_config={
-            "sel": st.column_config.CheckboxColumn(label="", width=38),
+            "sel": st.column_config.CheckboxColumn(label="", width=38, help="Seleziona riga"),
             "codice": st.column_config.TextColumn(width=50),
             "prodotto": st.column_config.TextColumn(width=380),
             "prezzo": st.column_config.NumberColumn(format="€ %.2f", width=75),
@@ -246,6 +332,7 @@ with tab_search:
     st.divider()
     add_btn = st.button("➕ Aggiungi selezionati al paniere", type="primary")
 
+    # Notifica sotto al bottone
     if st.session_state.flash:
         f = st.session_state.flash
         {"success": st.success, "info": st.info, "warning": st.warning, "error": st.error}.get(
@@ -270,3 +357,83 @@ with tab_search:
             st.rerun()
         else:
             st.info("Seleziona almeno un articolo dalla griglia.")
+
+# =========================
+# TAB: PANIERE
+# =========================
+with tab_basket:
+    basket = st.session_state.basket.copy()
+
+    # Toggle selezione completo paniere
+    c_toggle_b, _ = st.columns([3, 7])
+    all_on_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
+    if c_toggle_b.button("Deseleziona tutto il paniere" if all_on_b else "Seleziona tutto il paniere"):
+        st.session_state.basket_select_all_toggle = not all_on_b
+        st.session_state.reset_basket_selection = not st.session_state.basket_select_all_toggle
+        st.rerun()
+
+    default_sel_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
+
+    # Prefisso ⏳ in display anche nel paniere
+    basket_display = with_fw_prefix(basket)[DISPLAY_COLUMNS].copy()
+    basket_display.insert(0, "rm", default_sel_b)
+
+    edited_basket = st.data_editor(
+        basket_display,
+        hide_index=True,
+        use_container_width=True,
+        num_rows="fixed",
+        column_config={
+            "rm": st.column_config.CheckboxColumn(label="", width=38, help="Seleziona per rimuovere"),
+            "codice": st.column_config.TextColumn(width=120),
+            "prodotto": st.column_config.TextColumn(width=380),
+            "prezzo": st.column_config.NumberColumn(format="€ %.2f", width=100),
+            "categoria": st.column_config.TextColumn(width=160),
+            "tipologia": st.column_config.TextColumn(width=160),
+            "provenienza": st.column_config.TextColumn(width=160),
+        },
+        disabled=["codice", "prodotto", "prezzo", "categoria", "tipologia", "provenienza"],
+        key="basket_editor",
+    )
+
+    st.divider()
+    c1, c2, c3 = st.columns([1, 1, 1])
+    remove_btn = c1.button("🗑️ Rimuovi selezionati", type="primary")
+
+    # Ordina prima di esportare
+    basket_sorted = st.session_state.basket.sort_values(
+        ["categoria", "tipologia", "provenienza", "prodotto"], kind="stable"
+    ).reset_index(drop=True)
+
+    # Export con prefisso ⏳ per i FW (PDF-safe sostituisce ⏳ -> [FW])
+    export_df = with_fw_prefix(basket_sorted)[DISPLAY_COLUMNS].copy()
+
+    # Download diretto: Excel e PDF
+    xbuf = make_excel(export_df)
+    c2.download_button(
+        "⬇️ Esporta Excel",
+        data=xbuf,
+        file_name="prodotti_selezionati.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+    pbuf = make_pdf(export_df)
+    c3.download_button(
+        "⬇️ Crea PDF",
+        data=pbuf,
+        file_name="prodotti_selezionati.pdf",
+        mime="application/pdf",
+    )
+
+    if remove_btn:
+        to_remove = set(edited_basket.loc[edited_basket["rm"].fillna(False), "codice"].tolist())
+        if to_remove:
+            st.session_state.basket = st.session_state.basket[
+                ~st.session_state.basket["codice"].isin(to_remove)
+            ].reset_index(drop=True)
+            st.session_state.basket_select_all_toggle = False
+            st.session_state.reset_basket_selection = True
+            st.success("Rimossi articoli selezionati.")
+            st.rerun()
+        else:
+            st.info("Seleziona almeno un articolo da rimuovere.")
