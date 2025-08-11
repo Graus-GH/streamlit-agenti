@@ -41,7 +41,6 @@ def load_data(url: str) -> pd.DataFrame:
     r = requests.get(url)
     r.raise_for_status()
     df_raw = pd.read_csv(io.BytesIO(r.content))
-
     df = pd.DataFrame({name: df_raw.iloc[:, idx] for name, idx in COL_MAP.items()})
 
     # Stringhe
@@ -98,14 +97,11 @@ def make_excel(df: pd.DataFrame) -> bytes:
 
 
 def make_pdf(df: pd.DataFrame) -> bytes:
-    from fpdf import FPDF
-
+    # PDF-safe: sostituisce emoji ⏳ con [FW] e rimuove caratteri non Latin-1
     def pdf_safe(s: str) -> str:
         if s is None:
             return ""
-        # sostituisci l'emoji usata per i Fine Wines con un tag testuale
         s = str(s).replace("⏳", "[FW]")
-        # rimuovi qualunque carattere non rappresentabile in Latin-1 (FPDF core fonts)
         return s.encode("latin-1", "ignore").decode("latin-1")
 
     pdf = FPDF(orientation="L", unit="mm", format="A4")
@@ -141,7 +137,6 @@ def make_pdf(df: pd.DataFrame) -> bytes:
 
     out = pdf.output(dest="S")
     return out if isinstance(out, (bytes, bytearray)) else out.encode("latin1")
-
 
 
 def adaptive_price_bounds(df: pd.DataFrame) -> Tuple[float, float]:
@@ -182,7 +177,7 @@ st.markdown(
 # STATE
 # =========================
 if "basket" not in st.session_state:
-    # includo anche is_fw per poter mantenere l'informazione nel paniere
+    # includo anche is_fw per mantenere l'informazione nel paniere
     st.session_state.basket = pd.DataFrame(columns=DISPLAY_COLUMNS + ["is_fw"])
 if "res_select_all_toggle" not in st.session_state:
     st.session_state.res_select_all_toggle = False
@@ -245,8 +240,6 @@ with tab_search:
                 "oppure 'Pubblica sul web' in CSV)."
             )
             st.caption(f"Dettaglio: {e}")
-
-    # Nota: manteniamo 'is_fw' ma mostriamo solo DISPLAY_COLUMNS nelle griglie
 
     # Filtraggio testuale
     tokens = tokenize_query(q) if q else []
@@ -414,7 +407,7 @@ with tab_basket:
         ["categoria", "tipologia", "provenienza", "prodotto"], kind="stable"
     ).reset_index(drop=True)
 
-    # Export con prefisso ⏳ per i FW
+    # Export con prefisso ⏳ per i FW (PDF-safe sostituisce ⏳ -> [FW])
     export_df = with_fw_prefix(basket_sorted)[DISPLAY_COLUMNS].copy()
 
     # Download diretto: Excel e PDF
@@ -446,4 +439,3 @@ with tab_basket:
             st.rerun()
         else:
             st.info("Seleziona almeno un articolo da rimuovere.")
-
