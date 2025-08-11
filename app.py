@@ -97,7 +97,13 @@ def make_excel(df: pd.DataFrame) -> bytes:
 
 
 def make_pdf(df: pd.DataFrame) -> bytes:
-    # PDF-safe: sostituisce emoji ⏳ con [FW] e rimuove caratteri non Latin-1
+    """
+    Crea un PDF in bytes.
+    - Converte qualunque output di FPDF in bytes (mai str).
+    - Rende 'PDF-safe' i testi: sostituisce l'emoji ⏳ con [FW] e filtra i caratteri non Latin-1.
+    """
+    from fpdf import FPDF
+
     def pdf_safe(s: str) -> str:
         if s is None:
             return ""
@@ -113,11 +119,11 @@ def make_pdf(df: pd.DataFrame) -> bytes:
     pdf.set_font("Helvetica", "B", 10)
     headers = DISPLAY_COLUMNS
     col_widths = [35, 120, 40, 40, 40, 25]
-
     for h, w in zip(headers, col_widths):
         pdf.cell(w, 8, pdf_safe(h.upper()), border=1)
     pdf.ln(8)
 
+    # Rows
     pdf.set_font("Helvetica", size=9)
     for _, r in df.iterrows():
         cells = [
@@ -135,8 +141,13 @@ def make_pdf(df: pd.DataFrame) -> bytes:
             pdf.cell(w, 6, txt, border=1)
         pdf.ln(6)
 
+    # Forza bytes SEMPRE
     out = pdf.output(dest="S")
-    return out if isinstance(out, (bytes, bytearray)) else out.encode("latin1")
+    if isinstance(out, (bytes, bytearray)):
+        return bytes(out)
+    # FPDF v1: 'S' ritorna str (latin-1)
+    return out.encode("latin-1", "ignore")
+
 
 
 def adaptive_price_bounds(df: pd.DataFrame) -> Tuple[float, float]:
@@ -439,3 +450,4 @@ with tab_basket:
             st.rerun()
         else:
             st.info("Seleziona almeno un articolo da rimuovere.")
+
