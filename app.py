@@ -98,10 +98,20 @@ def make_excel(df: pd.DataFrame) -> bytes:
 
 
 def make_pdf(df: pd.DataFrame) -> bytes:
+    from fpdf import FPDF
+
+    def pdf_safe(s: str) -> str:
+        if s is None:
+            return ""
+        # sostituisci l'emoji usata per i Fine Wines con un tag testuale
+        s = str(s).replace("⏳", "[FW]")
+        # rimuovi qualunque carattere non rappresentabile in Latin-1 (FPDF core fonts)
+        return s.encode("latin-1", "ignore").decode("latin-1")
+
     pdf = FPDF(orientation="L", unit="mm", format="A4")
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 14)
-    pdf.cell(0, 10, "Prodotti selezionati", ln=1)
+    pdf.cell(0, 10, pdf_safe("Prodotti selezionati"), ln=1)
 
     # Header
     pdf.set_font("Helvetica", "B", 10)
@@ -109,7 +119,7 @@ def make_pdf(df: pd.DataFrame) -> bytes:
     col_widths = [35, 120, 40, 40, 40, 25]
 
     for h, w in zip(headers, col_widths):
-        pdf.cell(w, 8, h.upper(), border=1)
+        pdf.cell(w, 8, pdf_safe(h.upper()), border=1)
     pdf.ln(8)
 
     pdf.set_font("Helvetica", size=9)
@@ -123,17 +133,15 @@ def make_pdf(df: pd.DataFrame) -> bytes:
             ("" if pd.isna(r.get("prezzo")) else f"{r.get('prezzo'):.2f}"),
         ]
         for c, w in zip(cells, col_widths):
-            txt = c.replace("\n", " ")
+            txt = pdf_safe(c.replace("\n", " "))
             if len(txt) > 80:
                 txt = txt[:77] + "..."
             pdf.cell(w, 6, txt, border=1)
         pdf.ln(6)
 
-    out = pdf.output(dest="S")  # fpdf/fpdf2: può essere str, bytes o bytearray
-    if isinstance(out, (bytes, bytearray)):
-        return bytes(out)
-    else:  # string
-        return out.encode("latin1")
+    out = pdf.output(dest="S")
+    return out if isinstance(out, (bytes, bytearray)) else out.encode("latin1")
+
 
 
 def adaptive_price_bounds(df: pd.DataFrame) -> Tuple[float, float]:
@@ -438,3 +446,4 @@ with tab_basket:
             st.rerun()
         else:
             st.info("Seleziona almeno un articolo da rimuovere.")
+
