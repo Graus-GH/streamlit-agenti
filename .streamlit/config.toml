@@ -3,3 +3,10 @@ showErrorDetails = true
 
 [server]
 headless = true
+
+[theme]
+primaryColor = "#005caa"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F6F8FA"
+textColor = "#111111"
+font = "sans serif"
