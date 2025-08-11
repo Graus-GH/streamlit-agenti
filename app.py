@@ -177,6 +177,9 @@ if "reset_basket_selection" not in st.session_state:
     st.session_state.reset_basket_selection = False
 if "flash" not in st.session_state:
     st.session_state.flash = None  # notifica one-shot
+# stato persistente del checkbox Fine Wines
+if "include_fw" not in st.session_state:
+    st.session_state.include_fw = False
 
 # =========================
 # DATA (base)
@@ -200,53 +203,62 @@ with tab_search:
             placeholder="Es. 'riesling alto adige 0,75'",
         )
 
-        # ✅ Checkbox Fine Wines (default: non selezionato)
-        include_fw = st.checkbox(
+        # ✅ Checkbox Fine Wines (persistente)
+        st.checkbox(
             "Includi FINE WINES (disponibilità salvo conferma e almeno 3 settimane per consegna)",
-            value=False
+            value=st.session_state.include_fw,
+            key="include_fw",
         )
 
-        # Caricamento condizionale del dataset
-        if include_fw:
-            df_fw = load_data(FW_CSV_URL)
-            df_all = pd.concat([df_base, df_fw], ignore_index=True)
-        else:
-            df_all = df_base.copy()
-
-        df_all = df_all[DISPLAY_COLUMNS].copy()
-
-        # Filtraggio testuale
-        tokens = tokenize_query(q) if q else []
-        mask_text = (
-            df_all.apply(lambda r: row_matches(r, tokens, SEARCH_FIELDS), axis=1)
-            if tokens
-            else pd.Series(True, index=df_all.index)
-        )
-        df_after_text = df_all.loc[mask_text]
-
-        # Prezzo dinamico
-        dyn_min, dyn_max = adaptive_price_bounds(df_after_text)
-        c1, c2, c3 = st.columns([1, 1, 2])
-        min_price_input = c1.number_input(
-            "Prezzo min", min_value=0.0, value=float(dyn_min), step=0.1, format="%.2f"
-        )
-        max_price_input = c2.number_input(
-            "Prezzo max", min_value=0.01, value=float(dyn_max), step=0.1, format="%.2f"
-        )
-        max_for_slider = max(min_price_input, max_price_input)
-        price_range = c3.slider(
-            "Slider prezzo (sincronizzato)",
-            min_value=0.0,
-            max_value=max(0.01, round(max_for_slider, 2)),
-            value=(float(min_price_input), float(max_price_input)),
-            step=0.1,
-        )
-        min_price = min(price_range[0], price_range[1])
-        max_price = max(price_range[0], price_range[1])
-
+        # 🔘 Submit obbligatorio per evitare warning "Missing Submit Button"
         submitted = st.form_submit_button("Cerca")
 
-    # Filtraggio prezzo post-submit
+    # Costruisci il dataset in base allo stato del checkbox (persistente)
+    df_all = df_base.copy()
+    if st.session_state.include_fw:
+        try:
+            df_fw = load_data(FW_CSV_URL)
+            df_all = pd.concat([df_all, df_fw], ignore_index=True)
+        except requests.exceptions.HTTPError as e:
+            st.warning(
+                "⚠️ Impossibile caricare il foglio Fine Wines. "
+                "Controlla che il file sia pubblico (File → Condividi → 'Chiunque con il link può visualizzare' "
+                "oppure 'Pubblica sul web' in CSV)."
+            )
+            st.caption(f"Dettaglio: {e}")
+
+    df_all = df_all[DISPLAY_COLUMNS].copy()
+
+    # Filtraggio testuale
+    tokens = tokenize_query(q) if q else []
+    mask_text = (
+        df_all.apply(lambda r: row_matches(r, tokens, SEARCH_FIELDS), axis=1)
+        if tokens
+        else pd.Series(True, index=df_all.index)
+    )
+    df_after_text = df_all.loc[mask_text]
+
+    # Prezzo dinamico
+    dyn_min, dyn_max = adaptive_price_bounds(df_after_text)
+    c1, c2, c3 = st.columns([1, 1, 2])
+    min_price_input = c1.number_input(
+        "Prezzo min", min_value=0.0, value=float(dyn_min), step=0.1, format="%.2f"
+    )
+    max_price_input = c2.number_input(
+        "Prezzo max", min_value=0.01, value=float(dyn_max), step=0.1, format="%.2f"
+    )
+    max_for_slider = max(min_price_input, max_price_input)
+    price_range = c3.slider(
+        "Slider prezzo (sincronizzato)",
+        min_value=0.0,
+        max_value=max(0.01, round(max_for_slider, 2)),
+        value=(float(min_price_input), float(max_price_input)),
+        step=0.1,
+    )
+    min_price = min(price_range[0], price_range[1])
+    max_price = max(price_range[0], price_range[1])
+
+    # Filtraggio prezzo
     mask_price = df_after_text["prezzo"].fillna(0.0).between(min_price, max_price)
     df_res = df_after_text.loc[mask_price].reset_index(drop=True)
 
@@ -358,8 +370,13 @@ with tab_basket:
     c1, c2, c3 = st.columns([1, 1, 1])
     remove_btn = c1.button("🗑️ Rimuovi selezionati", type="primary")
 
+    # Ordina prima di esportare
+    basket_sorted = basket.sort_values(
+        ["categoria", "tipologia", "provenienza", "prodotto"], kind="stable"
+    ).reset_index(drop=True)
+
     # Download diretto: Excel e PDF
-    xbuf = make_excel(basket)
+    xbuf = make_excel(basket_sorted)
     c2.download_button(
         "⬇️ Esporta Excel",
         data=xbuf,
@@ -367,7 +384,7 @@ with tab_basket:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
-    pbuf = make_pdf(basket)
+    pbuf = make_pdf(basket_sorted)
     c3.download_button(
         "⬇️ Crea PDF",
         data=pbuf,
