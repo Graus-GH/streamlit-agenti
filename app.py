@@ -8,7 +8,7 @@ import requests
 import streamlit as st
 from fpdf import FPDF
 
-st.set_page_config(page_title="Ricerca articoli • Prodotti selezionati", layout="wide")
+st.set_page_config(page_title="📦✨GRAUS Proposta+", layout="wide")
 
 # =========================
 # CONFIG – ORIGINE DATI
@@ -59,10 +59,15 @@ def load_data(url: str) -> pd.DataFrame:
 
     df["prezzo"] = df["prezzo"].apply(to_float)
 
-    # Codice numerico senza separatori/decimali
+    # Codice numerico: solo cifre, rimuovi eventuali "decimali" '00' finali
     def normalize_code(x: str) -> str:
         s = re.sub("[^0-9]", "", str(x))  # solo cifre
         s = s.lstrip("0") or "0"          # aspetto numerico
+        # elimina gli ultimi due zeri se presenti (caso es. '123400' da '1234,00')
+        if len(s) > 2 and s.endswith("00"):
+            s = s[:-2]
+            if s == "":
+                s = "0"
         return s
 
     df["codice"] = df["codice"].astype(str).apply(normalize_code)
@@ -176,19 +181,7 @@ with st.spinner("Caricamento dati…"):
 
 df_all = df_all[DISPLAY_COLUMNS].copy()
 
-st.title("🔎 Ricerca articoli & 🧺 Prodotti selezionati")
-
-# 🔔 Banner notifica: visibile fino alla prossima azione dell'utente
-if st.session_state.flash:
-    f = st.session_state.flash
-    kind = f.get("type", "success")
-    msg = f.get("msg", "")
-    {"success": st.success, "info": st.info, "warning": st.warning, "error": st.error}.get(kind, st.success)(msg)
-    # se l'abbiamo appena mostrata, al prossimo rerun si cancella
-    if not f.get("shown", False):
-        st.session_state.flash["shown"] = True
-    else:
-        st.session_state.flash = None
+st.title("📦✨GRAUS Proposta+")
 
 tab_search, tab_basket = st.tabs(["Ricerca", "Prodotti selezionati"])
 
@@ -235,16 +228,25 @@ with tab_search:
 
     st.caption(f"Risultati: {len(df_res)}")
 
-    # Pulsanti selezione globale
-    csel_all, cdesel_all, _ = st.columns([1.4, 1.8, 6])
-    if csel_all.button("Seleziona tutti i risultati"):
-        st.session_state.res_select_all_toggle = True
-        st.session_state.reset_res_selection = False
+    # Pulsante unico: Seleziona/Deseleziona tutti i risultati (toggle)
+    c_toggle, _ = st.columns([2.6, 7.4])
+    toggle_label = "Deseleziona tutti i risultati" if (st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection) else "Seleziona tutti i risultati"
+    if c_toggle.button(toggle_label):
+        st.session_state.res_select_all_toggle = not (st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection)
+        st.session_state.reset_res_selection = False if st.session_state.res_select_all_toggle else True
         st.rerun()
-    if cdesel_all.button("Deseleziona tutti i risultati"):
-        st.session_state.res_select_all_toggle = False
-        st.session_state.reset_res_selection = True
-        st.rerun()
+
+    # 🔔 Notifica (one-shot) posizionata subito sotto il pulsante toggle
+    if st.session_state.flash:
+        f = st.session_state.flash
+        kind = f.get("type", "success")
+        msg = f.get("msg", "")
+        {"success": st.success, "info": st.info, "warning": st.warning, "error": st.error}.get(kind, st.success)(msg)
+        # Se è stata appena mostrata, al prossimo rerun si cancella
+        if not f.get("shown", False):
+            st.session_state.flash["shown"] = True
+        else:
+            st.session_state.flash = None
 
     # Griglia con checkbox
     default_sel = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
@@ -284,7 +286,7 @@ with tab_search:
             # reset selezioni dopo aggiunta
             st.session_state.res_select_all_toggle = False
             st.session_state.reset_res_selection = True
-            # 🔔 notifica che dura fino alla prossima azione
+            # 🔔 notifica che dura fino alla prossima azione, mostrata sotto il toggle
             st.session_state.flash = {
                 "type": "success",
                 "msg": f"Aggiunti {len(df_to_add)} articoli al paniere.",
@@ -298,9 +300,8 @@ with tab_search:
 # TAB: PANIERE – selezione massiva, export
 # =========================
 with tab_basket:
-    st.subheader("🧺 Prodotti selezionati")
     basket = st.session_state.basket.copy()
-    st.caption(f"Nel paniere: {len(basket)} articoli")
+    st.subheader(f"🧺 Prodotti selezionati ({len(basket)})")
 
     if len(basket) > 0:
         csel_all_b, cdesel_all_b, _ = st.columns([1.6, 2.0, 6])
