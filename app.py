@@ -17,6 +17,11 @@ SHEET_ID = "10BFJQTV1yL69cotE779zuR8vtG5NqKWOVH0Uv1AnGaw"
 GID = "707323537"
 CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
 
+# Fine Wines (inclusi solo se checkbox attivo)
+FW_SHEET_ID = "1D4-zgwpAGiWDCpPwDVipAD7Nlpi4aesFwRRpud2W-rk"
+FW_GID = "1549810072"
+FW_CSV_URL = f"https://docs.google.com/spreadsheets/d/{FW_SHEET_ID}/export?format=csv&gid={FW_GID}"
+
 COL_MAP = {
     "codice": 0,       # A
     "prodotto": 2,     # C
@@ -174,11 +179,10 @@ if "flash" not in st.session_state:
     st.session_state.flash = None  # notifica one-shot
 
 # =========================
-# DATA
+# DATA (base)
 # =========================
 with st.spinner("Caricamento dati…"):
-    df_all = load_data(CSV_URL)
-df_all = df_all[DISPLAY_COLUMNS].copy()
+    df_base = load_data(CSV_URL)
 
 st.title("📦✨GRAUS Proposta+")
 
@@ -195,6 +199,23 @@ with tab_search:
             "Cerca (multi-parola) su: codice, prodotto, categoria, tipologia, provenienza",
             placeholder="Es. 'riesling alto adige 0,75'",
         )
+
+        # ✅ Checkbox Fine Wines (default: non selezionato)
+        include_fw = st.checkbox(
+            "Includi FINE WINES (disponibilità salvo conferma e almeno 3 settimane per consegna)",
+            value=False
+        )
+
+        # Caricamento condizionale del dataset
+        if include_fw:
+            df_fw = load_data(FW_CSV_URL)
+            df_all = pd.concat([df_base, df_fw], ignore_index=True)
+        else:
+            df_all = df_base.copy()
+
+        df_all = df_all[DISPLAY_COLUMNS].copy()
+
+        # Filtraggio testuale
         tokens = tokenize_query(q) if q else []
         mask_text = (
             df_all.apply(lambda r: row_matches(r, tokens, SEARCH_FIELDS), axis=1)
@@ -203,6 +224,7 @@ with tab_search:
         )
         df_after_text = df_all.loc[mask_text]
 
+        # Prezzo dinamico
         dyn_min, dyn_max = adaptive_price_bounds(df_after_text)
         c1, c2, c3 = st.columns([1, 1, 2])
         min_price_input = c1.number_input(
@@ -224,6 +246,7 @@ with tab_search:
 
         submitted = st.form_submit_button("Cerca")
 
+    # Filtraggio prezzo post-submit
     mask_price = df_after_text["prezzo"].fillna(0.0).between(min_price, max_price)
     df_res = df_after_text.loc[mask_price].reset_index(drop=True)
 
