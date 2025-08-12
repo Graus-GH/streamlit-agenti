@@ -1,0 +1,13 @@
+import streamlit as st
+import streamlit_authenticator as stauth
+
+st.title("🔐 Genera hash password (usa e poi cancella la pagina)")
+
+pw = st.text_input("Password", type="password", help="Inserisci la password in chiaro")
+if st.button("Genera hash"):
+    if not pw:
+        st.warning("Inserisci una password.")
+    else:
+        hashed = stauth.Hasher([pw]).generate()[0]
+        st.success("Hash generato. Copialo e incollalo nei Secrets.")
+        st.code(hashed)
