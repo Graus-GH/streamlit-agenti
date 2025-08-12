@@ -11,43 +11,33 @@ from fpdf import FPDF
 st.set_page_config(page_title="✨GRAUS Proposta Clienti", layout="wide")
 
 # =========================
-# CSS – sidebar più larga, checkbox arancione, pulsanti compatti
+# CSS – sidebar, checkbox arancione, pulsanti compatti
 # =========================
 st.markdown("""
 <style>
-/* Sidebar più larga */
 section[data-testid="stSidebar"] { width: 360px !important; min-width: 360px !important; }
 
-/* Checkbox a tutta larghezza (anche in sidebar) */
+/* Checkbox a tutta larghezza con nota a capo */
 div[data-testid="stForm"] div[data-testid="stCheckbox"] > label {
-  width: 100%;
-  display: flex;
-  align-items: start;
-  gap: 6px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  box-sizing: border-box;
-  white-space: pre-line; /* abilita il \n nella label */
+  width: 100%; display: flex; align-items: start; gap: 6px;
+  padding: 6px 10px; border-radius: 8px; border: 1px solid transparent;
+  box-sizing: border-box; white-space: pre-line;
 }
-/* Sfondo arancione solo se spuntato */
 div[data-testid="stForm"] div[data-testid="stCheckbox"] > label:has(input:checked) {
-  background: #ffedd5;
-  color: #7c2d12;
-  border-color: #fdba74;
+  background: #ffedd5; color: #7c2d12; border-color: #fdba74;
 }
-/* Checkbox leggermente più grande */
 div[data-testid="stForm"] div[data-testid="stCheckbox"] input[type="checkbox"] { transform: scale(1.1); }
 
-/* Compattezza form in sidebar */
+/* Form compatto */
 section[data-testid="stSidebar"] div[data-testid="stForm"] label p { margin-bottom: 2px !important; }
 section[data-testid="stSidebar"] div[data-testid="stNumberInputContainer"] input,
 section[data-testid="stSidebar"] input[type="text"] { height: 34px; }
 
 /* Pulsanti compatti */
 .stButton > button, .stDownloadButton > button { padding: 6px 10px; line-height: 1; }
-/* Riduci gap tra colonne orizzontali */
-div[data-testid="stHorizontalBlock"] { gap: 6px; }
+
+/* "Tabs" controller orizzontale (radio) */
+div[role="radiogroup"] { gap: 8px !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -220,10 +210,9 @@ for k in [
     "reset_basket_selection",
     "flash",
     "include_fw",
-    "prefer_basket",
-    "prefer_search",
+    "active_tab",   # "Ricerca" | "Prodotti"
 ]:
-    st.session_state.setdefault(k, False)
+    st.session_state.setdefault(k, False if k != "active_tab" else "Ricerca")
 
 # =========================
 # DATA
@@ -233,7 +222,7 @@ with st.spinner("Caricamento dati…"):
 df_base["is_fw"] = False
 
 # =========================
-# HEADER con logo a destra
+# HEADER
 # =========================
 h1, h2 = st.columns([4, 1])
 with h1:
@@ -245,25 +234,21 @@ with h2:
     )
 
 # =========================
-# SIDEBAR – Ricerca compatta
+# SIDEBAR – Ricerca
 # =========================
 with st.sidebar:
     st.header("🔎 Ricerca")
-    # Key unica per evitare duplicati form
     with st.form("search_form_sidebar", clear_on_submit=False):
         q = st.text_input(
             "Cerca su codice, prodotto, categoria, tipologia, provenienza",
             placeholder="Es. 'riesling alto adige 0,75'",
         )
-
-        # Checkbox Fine Wines con testo su due righe dentro il box arancione
         st.checkbox(
             "Includi FINE WINES\n⏳ disponibilità salvo conferma e consegna minimo 3 settimane.",
             value=st.session_state.include_fw,
             key="include_fw",
         )
 
-        # Dataset PARZIALE per bound dinamici basati sul testo
         df_all = df_base.copy()
         if st.session_state.include_fw:
             try:
@@ -283,14 +268,8 @@ with st.sidebar:
         df_after_text = df_all.loc[mask_text]
 
         dyn_min, dyn_max = adaptive_price_bounds(df_after_text)
-
-        # Filtro prezzi: Min (riga 1) -> Max (riga 2) -> Slider (riga 3)
-        min_price_input = st.number_input(
-            "Min", min_value=0.0, value=float(dyn_min), step=0.1, format="%.2f"
-        )
-        max_price_input = st.number_input(
-            "Max", min_value=0.01, value=float(dyn_max), step=0.1, format="%.2f"
-        )
+        min_price_input = st.number_input("Min", min_value=0.0, value=float(dyn_min), step=0.1, format="%.2f")
+        max_price_input = st.number_input("Max", min_value=0.01, value=float(dyn_max), step=0.1, format="%.2f")
         max_for_slider = max(min_price_input, max_price_input)
         price_range = st.slider(
             "Range",
@@ -303,37 +282,33 @@ with st.sidebar:
 
         submitted_sidebar = st.form_submit_button("Cerca")
         if submitted_sidebar:
-            # dopo la ricerca, apri il tab Ricerca
-            st.session_state.prefer_search = True
+            st.session_state.active_tab = "Ricerca"
 
-# Valori finali filtranti (globali)
+# Filtri applicati
 min_price = min(price_range[0], price_range[1])
 max_price = max(price_range[0], price_range[1])
 mask_price = df_after_text["prezzo"].fillna(0.0).between(min_price, max_price)
 df_res = df_after_text.loc[mask_price].reset_index(drop=True)
 
 # =========================
-# TABS – ordine dinamico per restare/andare sul tab corretto
+# "TABS" CONTROLLER – ordine fisso
 # =========================
 basket_len = len(st.session_state.basket)
-
-# Priorità: se hai appena cercato -> Ricerca; se hai appena rimosso/aggiunto -> Paniere
-if st.session_state.get("prefer_search", False):
-    tab_search, tab_basket = st.tabs(["Ricerca", f"Prodotti selezionati ({basket_len})"])
-    st.session_state.prefer_search = False
-elif st.session_state.get("prefer_basket", False):
-    tab_basket, tab_search = st.tabs([f"Prodotti selezionati ({basket_len})", "Ricerca"])
-    st.session_state.prefer_basket = False
-else:
-    tab_search, tab_basket = st.tabs(["Ricerca", f"Prodotti selezionati ({basket_len})"])
+labels = ["Ricerca", f"Prodotti selezionati ({basket_len})"]
+index = 0 if st.session_state.active_tab == "Ricerca" else 1
+choice = st.radio("",
+                  options=labels,
+                  index=index,
+                  horizontal=True,
+                  label_visibility="collapsed")
+st.session_state.active_tab = "Ricerca" if choice == labels[0] else "Prodotti"
 
 # =========================
-# TAB: RICERCA
+# RICERCA (se attiva)
 # =========================
-with tab_search:
+if st.session_state.active_tab == "Ricerca":
     st.caption(f"Risultati: {len(df_res)}")
 
-    # Toggle risultati
     c_toggle, _ = st.columns([3, 7])
     all_on = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
     if c_toggle.button("Deseleziona tutti i risultati" if all_on else "Seleziona tutti i risultati"):
@@ -341,7 +316,6 @@ with tab_search:
         st.session_state.reset_res_selection = not st.session_state.res_select_all_toggle
         st.rerun()
 
-    # Griglia risultati con prefisso ⏳ per FW (solo display)
     default_sel = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
     df_res_display = with_fw_prefix(df_res)[DISPLAY_COLUMNS].copy()
     df_res_display.insert(0, "sel", default_sel)
@@ -367,7 +341,6 @@ with tab_search:
     st.divider()
     add_btn = st.button("➕ Aggiungi selezionati al paniere", type="primary")
 
-    # Notifica sotto al bottone
     if st.session_state.flash:
         f = st.session_state.flash
         {"success": st.success, "info": st.info, "warning": st.warning, "error": st.error}.get(
@@ -386,39 +359,37 @@ with tab_search:
             combined = pd.concat([st.session_state.basket, df_to_add], ignore_index=True)
             combined = combined.drop_duplicates(subset=["codice"]).reset_index(drop=True)
             st.session_state.basket = combined
+
             st.session_state.res_select_all_toggle = False
             st.session_state.reset_res_selection = True
             st.session_state.flash = {"type": "success", "msg": f"Aggiunti {len(df_to_add)} articoli al paniere.", "shown": False}
-            st.session_state.prefer_basket = True
+
+            st.session_state.active_tab = "Prodotti"
             st.rerun()
         else:
             st.info("Seleziona almeno un articolo dalla griglia.")
 
 # =========================
-# TAB: PANIERE
+# PANIERE (se attivo)
 # =========================
-with tab_basket:
+if st.session_state.active_tab == "Prodotti":
     basket = st.session_state.basket.copy()
 
-    # RIGA PULSANTI ORIZZONTALE E COMPATTA
+    # Pulsanti in orizzontale e compatti
     col_sel, col_rm, col_xls, col_pdf, _spacer = st.columns([1, 1, 1, 1, 10])
 
-    # 1) Seleziona/Deseleziona tutto (senza rerun)
     all_on_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
     if col_sel.button("Deseleziona tutto il paniere" if all_on_b else "Seleziona tutto il paniere"):
         st.session_state.basket_select_all_toggle = not all_on_b
         st.session_state.reset_basket_selection = not st.session_state.basket_select_all_toggle
 
-    # 2) Rimuovi selezionati (senza sfondo blu)
     remove_btn = col_rm.button("🗑️ Rimuovi selezionati")
 
-    # 3-4) Export (preparazione dati)
     basket_sorted = st.session_state.basket.sort_values(
         ["categoria", "tipologia", "provenienza", "prodotto"], kind="stable"
     ).reset_index(drop=True)
     export_df = with_fw_prefix(basket_sorted)[DISPLAY_COLUMNS].copy()
 
-    # 3) Esporta Excel
     xbuf = make_excel(export_df)
     col_xls.download_button(
         "⬇️ Esporta Excel",
@@ -427,7 +398,6 @@ with tab_basket:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
-    # 4) Crea PDF
     pbuf = make_pdf(export_df)
     col_pdf.download_button(
         "⬇️ Crea PDF",
@@ -436,7 +406,6 @@ with tab_basket:
         mime="application/pdf",
     )
 
-    # TABELLA PANIERE
     default_sel_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
     basket_display = with_fw_prefix(basket)[DISPLAY_COLUMNS].copy()
     basket_display.insert(0, "rm", default_sel_b)
@@ -459,7 +428,6 @@ with tab_basket:
         key="basket_editor",
     )
 
-    # RIMOZIONE ARTICOLI: refresh e resta nel paniere
     if remove_btn:
         selected_mask_b = edited_basket["rm"].fillna(False)
         selected_codes_b = set(edited_basket.loc[selected_mask_b, "codice"].tolist())
@@ -470,9 +438,9 @@ with tab_basket:
 
             st.session_state.basket_select_all_toggle = False
             st.session_state.reset_basket_selection = True
-
             st.session_state.flash = {"type": "success", "msg": "Rimossi articoli selezionati.", "shown": False}
-            st.session_state.prefer_basket = True  # dopo il rerun resta nel tab paniere
+
+            st.session_state.active_tab = "Prodotti"
             st.rerun()
         else:
             st.info("Seleziona almeno un articolo dal paniere.")
