@@ -11,6 +11,42 @@ from fpdf import FPDF
 
 st.set_page_config(page_title="✨GRAUS Proposta Clienti", layout="wide")
 
+
+import streamlit as st
+import streamlit_authenticator as stauth
+
+# --- AUTH (plaintext in secrets + auto_hash) ---
+if "auth" not in st.secrets:
+    st.error("Config di autenticazione mancante nei Secrets: sezione [auth].")
+    st.stop()
+
+cfg = st.secrets["auth"]
+credentials = cfg["credentials"]   # contiene "usernames": {...}
+cookie      = cfg["cookie"]
+
+authenticator = stauth.Authenticate(
+    credentials,
+    cookie["name"],
+    cookie["key"],
+    cookie["expiry_days"],
+    auto_hash=True,   # <--- accetta password in chiaro nei Secrets e le hasha al volo
+)
+
+name, auth_status, username = authenticator.login("Login", "main")
+
+if auth_status is False:
+    st.error("Credenziali non valide.")
+    st.stop()
+elif auth_status is None:
+    st.info("Inserisci username e password per accedere.")
+    st.stop()
+else:
+    authenticator.logout("Logout", "sidebar")
+    st.sidebar.write(f"👤 {name}")
+# --- /AUTH ---
+
+
+
 # =========================
 # CSS – sidebar, checkbox arancione, pulsanti compatti
 # =========================
@@ -445,6 +481,7 @@ if st.session_state.active_tab == "Prodotti":
             st.rerun()
         else:
             st.info("Seleziona almeno un articolo dal paniere.")
+
 
 
 
