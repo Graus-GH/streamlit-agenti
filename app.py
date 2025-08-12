@@ -1,6 +1,3 @@
-
-
-
 import io
 import re
 from typing import List, Tuple
@@ -14,7 +11,7 @@ from fpdf import FPDF
 st.set_page_config(page_title="✨GRAUS Proposta Clienti", layout="wide")
 
 # =========================
-# CSS – sidebar, checkbox arancione, pulsanti compatti
+# CSS – radio (tabs)
 # =========================
 st.markdown("""
 <style>
@@ -28,7 +25,6 @@ div[data-testid="stRadio"] > div[role="radiogroup"]{
   background: #ffffff;
   margin: 6px 0 12px 0;
 }
-
 /* Ogni opzione come una "pill" */
 div[data-testid="stRadio"] [role="radio"]{
   padding: 6px 12px;
@@ -37,23 +33,67 @@ div[data-testid="stRadio"] [role="radio"]{
   cursor: pointer;
   font-weight: 500;
   transition: background-color .15s ease, border-color .15s ease;
-  display: inline-flex;          /* assicura il padding */
+  display: inline-flex;
   align-items: center;
 }
-
 /* Attivo: blu leggero */
 div[data-testid="stRadio"] [role="radio"][aria-checked="true"]{
-  background: #eaf2ff;           /* blu molto leggero */
-  border-color: #93c5fd;         /* bordo blu tenue */
+  background: #eaf2ff;
+  border-color: #93c5fd;
 }
-
 /* Hover gradevole */
 div[data-testid="stRadio"] [role="radio"]:hover{
   background: #f1f5f9;
 }
+
+/* Card login */
+.login-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 18px;
+  background: #ffffff;
+}
 </style>
 """, unsafe_allow_html=True)
 
+# =========================
+# LOGIN – Utenti in chiaro (per test interni)
+# =========================
+USERS = {
+    "merch":     {"name": "Merch",                "password": "Sterch"},
+    "fdefazio":  {"name": "Francesco Defazio",    "password": "ciccio"},
+    "kristin":   {"name": "Kristin",              "password": ">Smarter!"},
+    "silvia":    {"name": "Silvia",               "password": ">Smarter!"},
+    "angelo":    {"name": "Angelo",               "password": ">#NumeroUno"},
+    "peppi":     {"name": "Peppi",                "password": ">Peppi25"},
+    "luca":      {"name": "Luca",                 "password": ">Luca33"},
+    "david":     {"name": "David",                "password": ">Dav!d"},
+}
+
+st.session_state.setdefault("authenticated", False)
+st.session_state.setdefault("username", None)
+st.session_state.setdefault("display_name", None)
+
+def login_view():
+    st.title("🔐 Accesso richiesto")
+    st.markdown('<div class="login-card">', unsafe_allow_html=True)
+    with st.form("login_form", clear_on_submit=False):
+        u = st.text_input("Username", placeholder="Es. merch")
+        p = st.text_input("Password", type="password")
+        ok = st.form_submit_button("Accedi")
+        if ok:
+            key = (u or "").strip()
+            rec = USERS.get(key)
+            if rec and p == rec["password"]:
+                st.session_state.authenticated = True
+                st.session_state.username = key
+                st.session_state.display_name = rec["name"]
+                st.success(f"Benvenuto, {rec['name']}!")
+                st.rerun()
+            else:
+                st.error("Credenziali non valide.")
+    st.markdown("</div>", unsafe_allow_html=True)
+    st.info("Suggerimento: usa uno degli utenti forniti (es. **merch / Sterch**).")
 
 # =========================
 # CONFIG – ORIGINE DATI
@@ -111,15 +151,12 @@ def load_data(url: str) -> pd.DataFrame:
     df = df.sort_values(["prodotto", "codice"], kind="stable").reset_index(drop=True)
     return df
 
-
 def tokenize_query(q: str) -> List[str]:
     return [t for t in re.split(r"\s+", q.strip()) if t]
-
 
 def row_matches(row: pd.Series, tokens: List[str], fields: List[str]) -> bool:
     haystack = " ".join(str(row[f]) for f in fields).lower()
     return all(t.lower() in haystack for t in tokens)
-
 
 def adaptive_price_bounds(df: pd.DataFrame) -> Tuple[float, float]:
     if df["prezzo"].notna().any():
@@ -130,13 +167,11 @@ def adaptive_price_bounds(df: pd.DataFrame) -> Tuple[float, float]:
         return max(0.0, round(mn, 2)), max(0.01, round(mx, 2))
     return 0.0, 0.01
 
-
 def with_fw_prefix(df: pd.DataFrame) -> pd.DataFrame:
     d = df.copy()
     if "is_fw" in d.columns:
         d["prodotto"] = np.where(d["is_fw"], "⏳ " + d["prodotto"].astype(str), d["prodotto"])
     return d
-
 
 # =========================
 # EXPORT (Excel/PDF)
@@ -170,7 +205,6 @@ def make_excel(df: pd.DataFrame) -> bytes:
     wb.save(buf)
     buf.seek(0)
     return buf.read()
-
 
 def make_pdf(df: pd.DataFrame) -> bytes:
     def pdf_safe(s: str) -> str:
@@ -211,270 +245,254 @@ def make_pdf(df: pd.DataFrame) -> bytes:
     out = pdf.output(dest="S")
     return bytes(out) if isinstance(out, (bytes, bytearray)) else out.encode("latin-1", "ignore")
 
+# =========================
+# APP UI (solo dopo login)
+# =========================
+def run_app():
+    # STATE
+    if "basket" not in st.session_state:
+        st.session_state.basket = pd.DataFrame(columns=DISPLAY_COLUMNS + ["is_fw"])
+    for k in [
+        "res_select_all_toggle",
+        "basket_select_all_toggle",
+        "reset_res_selection",
+        "reset_basket_selection",
+        "flash",
+        "include_fw",
+        "active_tab",   # "Ricerca" | "Prodotti"
+    ]:
+        st.session_state.setdefault(k, False if k != "active_tab" else "Ricerca")
 
-# =========================
-# STATE
-# =========================
-if "basket" not in st.session_state:
-    st.session_state.basket = pd.DataFrame(columns=DISPLAY_COLUMNS + ["is_fw"])
-for k in [
-    "res_select_all_toggle",
-    "basket_select_all_toggle",
-    "reset_res_selection",
-    "reset_basket_selection",
-    "flash",
-    "include_fw",
-    "active_tab",   # "Ricerca" | "Prodotti"
-]:
-    st.session_state.setdefault(k, False if k != "active_tab" else "Ricerca")
+    # DATA
+    with st.spinner("Caricamento dati…"):
+        df_base = load_data(CSV_URL)
+    df_base["is_fw"] = False
 
-# =========================
-# DATA
-# =========================
-with st.spinner("Caricamento dati…"):
-    df_base = load_data(CSV_URL)
-df_base["is_fw"] = False
-
-# =========================
-# HEADER
-# =========================
-h1, h2 = st.columns([4, 1])
-with h1:
-    st.title("✨GRAUS Proposta Clienti")
-with h2:
-    st.image(
-        "https://res.cloudinary.com/dct4tiqsl/image/upload/v1754315051/LogoGraus_j7d5jo.png",
-        width=130,
-    )
-
-# =========================
-# SIDEBAR – Ricerca
-# =========================
-with st.sidebar:
-    st.header("🔎 Ricerca")
-    with st.form("search_form_sidebar", clear_on_submit=False):
-        q = st.text_input(
-            "Cerca su codice, prodotto, categoria, tipologia, provenienza",
-            placeholder="Es. 'riesling alto adige 0,75'",
-        )
-        st.checkbox(
-            "Includi FINE WINES (⏳)\nDisponibilità salvo conferma e consegna minimo 3 settimane.",
-            value=st.session_state.include_fw,
-            key="include_fw",
+    # HEADER
+    h1, h2 = st.columns([4, 1])
+    with h1:
+        st.title("✨GRAUS Proposta Clienti")
+        st.caption(f"👤 Accesso: {st.session_state.display_name}")
+    with h2:
+        st.image(
+            "https://res.cloudinary.com/dct4tiqsl/image/upload/v1754315051/LogoGraus_j7d5jo.png",
+            width=130,
         )
 
-        df_all = df_base.copy()
-        if st.session_state.include_fw:
-            try:
-                df_fw = load_data(FW_CSV_URL)
-                df_fw["is_fw"] = True
-                df_all = pd.concat([df_all, df_fw], ignore_index=True)
-            except requests.exceptions.HTTPError as e:
-                st.warning("⚠️ Impossibile caricare il foglio Fine Wines.")
-                st.caption(f"Dettaglio: {e}")
+    # Info utente + Logout in sidebar (sopra la ricerca)
+    with st.sidebar:
+        lcol, rcol = st.columns([3,1])
+        with lcol:
+            st.caption(f"👤 {st.session_state.display_name}")
+        with rcol:
+            if st.button("Logout"):
+                for k in ["authenticated", "username", "display_name"]:
+                    st.session_state[k] = None if k != "authenticated" else False
+                st.rerun()
 
-        tokens = tokenize_query(q) if q else []
-        mask_text = (
-            df_all.apply(lambda r: row_matches(r, tokens, SEARCH_FIELDS), axis=1)
-            if tokens
-            else pd.Series(True, index=df_all.index)
-        )
-        df_after_text = df_all.loc[mask_text]
+    # SIDEBAR – Ricerca
+    with st.sidebar:
+        st.header("🔎 Ricerca")
+        with st.form("search_form_sidebar", clear_on_submit=False):
+            q = st.text_input(
+                "Cerca su codice, prodotto, categoria, tipologia, provenienza",
+                placeholder="Es. 'riesling alto adige 0,75'",
+            )
+            st.checkbox(
+                "Includi FINE WINES (⏳)\nDisponibilità salvo conferma e consegna minimo 3 settimane.",
+                value=st.session_state.include_fw,
+                key="include_fw",
+            )
 
-        dyn_min, dyn_max = adaptive_price_bounds(df_after_text)
-        min_price_input = st.number_input("Min", min_value=0.0, value=float(dyn_min), step=0.1, format="%.2f")
-        max_price_input = st.number_input("Max", min_value=0.01, value=float(dyn_max), step=0.1, format="%.2f")
-        max_for_slider = max(min_price_input, max_price_input)
-        price_range = st.slider(
-            "Range",
-            min_value=0.0,
-            max_value=max(0.01, round(max_for_slider, 2)),
-            value=(float(min_price_input), float(max_price_input)),
-            step=0.1,
-            label_visibility="collapsed",
-        )
+            df_all = df_base.copy()
+            if st.session_state.include_fw:
+                try:
+                    df_fw = load_data(FW_CSV_URL)
+                    df_fw["is_fw"] = True
+                    df_all = pd.concat([df_all, df_fw], ignore_index=True)
+                except requests.exceptions.HTTPError as e:
+                    st.warning("⚠️ Impossibile caricare il foglio Fine Wines.")
+                    st.caption(f"Dettaglio: {e}")
 
-        submitted_sidebar = st.form_submit_button("Cerca")
-        if submitted_sidebar:
-            st.session_state.active_tab = "Ricerca"
+            tokens = tokenize_query(q) if q else []
+            mask_text = (
+                df_all.apply(lambda r: row_matches(r, tokens, SEARCH_FIELDS), axis=1)
+                if tokens
+                else pd.Series(True, index=df_all.index)
+            )
+            df_after_text = df_all.loc[mask_text]
 
-# Filtri applicati
-min_price = min(price_range[0], price_range[1])
-max_price = max(price_range[0], price_range[1])
-mask_price = df_after_text["prezzo"].fillna(0.0).between(min_price, max_price)
-df_res = df_after_text.loc[mask_price].reset_index(drop=True)
+            dyn_min, dyn_max = adaptive_price_bounds(df_after_text)
+            min_price_input = st.number_input("Min", min_value=0.0, value=float(dyn_min), step=0.1, format="%.2f")
+            max_price_input = st.number_input("Max", min_value=0.01, value=float(dyn_max), step=0.1, format="%.2f")
+            max_for_slider = max(min_price_input, max_price_input)
+            price_range = st.slider(
+                "Range",
+                min_value=0.0,
+                max_value=max(0.01, round(max_for_slider, 2)),
+                value=(float(min_price_input), float(max_price_input)),
+                step=0.1,
+                label_visibility="collapsed",
+            )
 
-# =========================
-# "TABS" CONTROLLER – ordine fisso
-# =========================
-basket_len = len(st.session_state.basket)
-labels = ["Ricerca", f"Prodotti selezionati ({basket_len})"]
-index = 0 if st.session_state.active_tab == "Ricerca" else 1
+            submitted_sidebar = st.form_submit_button("Cerca")
+            if submitted_sidebar:
+                st.session_state.active_tab = "Ricerca"
 
-# Apri wrapper
-st.markdown('<div id="seg-tabs">', unsafe_allow_html=True)
+    # Filtri applicati
+    min_price = min(price_range[0], price_range[1])
+    max_price = max(price_range[0], price_range[1])
+    mask_price = df_after_text["prezzo"].fillna(0.0).between(min_price, max_price)
+    df_res = df_after_text.loc[mask_price].reset_index(drop=True)
 
-choice = st.radio(
-    "",
-    options=labels,
-    index=index,
-    horizontal=True,
-    label_visibility="collapsed",
-    key="seg_radio"  # chiave dedicata
-)
+    # TABS controller
+    basket_len = len(st.session_state.basket)
+    labels = ["Ricerca", f"Prodotti selezionati ({basket_len})"]
+    index = 0 if st.session_state.active_tab == "Ricerca" else 1
+    choice = st.radio("", options=labels, index=index, horizontal=True, label_visibility="collapsed")
+    st.session_state.active_tab = "Ricerca" if choice == labels[0] else "Prodotti"
 
-# Chiudi wrapper
-st.markdown('</div>', unsafe_allow_html=True)
+    # RICERCA
+    if st.session_state.active_tab == "Ricerca":
+        st.caption(f"Risultati: {len(df_res)}")
 
-st.session_state.active_tab = "Ricerca" if choice == labels[0] else "Prodotti"
-
-
-# =========================
-# RICERCA (se attiva)
-# =========================
-if st.session_state.active_tab == "Ricerca":
-    st.caption(f"Risultati: {len(df_res)}")
-
-    c_toggle, _ = st.columns([3, 7])
-    all_on = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
-    if c_toggle.button("Deseleziona tutti i risultati" if all_on else "Seleziona tutti i risultati"):
-        st.session_state.res_select_all_toggle = not all_on
-        st.session_state.reset_res_selection = not st.session_state.res_select_all_toggle
-        st.rerun()
-
-    default_sel = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
-    df_res_display = with_fw_prefix(df_res)[DISPLAY_COLUMNS].copy()
-    df_res_display.insert(0, "sel", default_sel)
-
-    edited_res = st.data_editor(
-        df_res_display,
-        hide_index=True,
-        use_container_width=True,
-        num_rows="fixed",
-        column_config={
-            "sel": st.column_config.CheckboxColumn(label="", width=38, help="Seleziona riga"),
-            "codice": st.column_config.TextColumn(width=50),
-            "prodotto": st.column_config.TextColumn(width=380),
-            "prezzo": st.column_config.NumberColumn(format="€ %.2f", width=75),
-            "categoria": st.column_config.TextColumn(width=160),
-            "tipologia": st.column_config.TextColumn(width=160),
-            "provenienza": st.column_config.TextColumn(width=160),
-        },
-        disabled=["codice", "prodotto", "prezzo", "categoria", "tipologia", "provenienza"],
-        key="res_editor",
-    )
-
-    st.divider()
-    add_btn = st.button("➕ Aggiungi selezionati al paniere", type="primary")
-
-    if st.session_state.flash:
-        f = st.session_state.flash
-        {"success": st.success, "info": st.info, "warning": st.warning, "error": st.error}.get(
-            f.get("type", "success"), st.success
-        )(f.get("msg", ""))
-        if not f.get("shown", False):
-            st.session_state.flash["shown"] = True
-        else:
-            st.session_state.flash = None
-
-    if add_btn:
-        selected_mask = edited_res["sel"].fillna(False)
-        selected_codes = set(edited_res.loc[selected_mask, "codice"].tolist())
-        if selected_codes:
-            df_to_add = df_res[df_res["codice"].isin(selected_codes)]
-            combined = pd.concat([st.session_state.basket, df_to_add], ignore_index=True)
-            combined = combined.drop_duplicates(subset=["codice"]).reset_index(drop=True)
-            st.session_state.basket = combined
-
-            st.session_state.res_select_all_toggle = False
-            st.session_state.reset_res_selection = True
-            st.session_state.flash = {"type": "success", "msg": f"Aggiunti {len(df_to_add)} articoli al paniere.", "shown": False}
-
-            st.session_state.active_tab = "Prodotti"
+        c_toggle, _ = st.columns([3, 7])
+        all_on = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
+        if c_toggle.button("Deseleziona tutti i risultati" if all_on else "Seleziona tutti i risultati"):
+            st.session_state.res_select_all_toggle = not all_on
+            st.session_state.reset_res_selection = not st.session_state.res_select_all_toggle
             st.rerun()
-        else:
-            st.info("Seleziona almeno un articolo dalla griglia.")
+
+        default_sel = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
+        df_res_display = with_fw_prefix(df_res)[DISPLAY_COLUMNS].copy()
+        df_res_display.insert(0, "sel", default_sel)
+
+        edited_res = st.data_editor(
+            df_res_display,
+            hide_index=True,
+            use_container_width=True,
+            num_rows="fixed",
+            column_config={
+                "sel": st.column_config.CheckboxColumn(label="", width=38, help="Seleziona riga"),
+                "codice": st.column_config.TextColumn(width=50),
+                "prodotto": st.column_config.TextColumn(width=380),
+                "prezzo": st.column_config.NumberColumn(format="€ %.2f", width=75),
+                "categoria": st.column_config.TextColumn(width=160),
+                "tipologia": st.column_config.TextColumn(width=160),
+                "provenienza": st.column_config.TextColumn(width=160),
+            },
+            disabled=["codice", "prodotto", "prezzo", "categoria", "tipologia", "provenienza"],
+            key="res_editor",
+        )
+
+        st.divider()
+        add_btn = st.button("➕ Aggiungi selezionati al paniere", type="primary")
+
+        if st.session_state.flash:
+            f = st.session_state.flash
+            {"success": st.success, "info": st.info, "warning": st.warning, "error": st.error}.get(
+                f.get("type", "success"), st.success
+            )(f.get("msg", ""))
+            if not f.get("shown", False):
+                st.session_state.flash["shown"] = True
+            else:
+                st.session_state.flash = None
+
+        if add_btn:
+            selected_mask = edited_res["sel"].fillna(False)
+            selected_codes = set(edited_res.loc[selected_mask, "codice"].tolist())
+            if selected_codes:
+                df_to_add = df_res[df_res["codice"].isin(selected_codes)]
+                combined = pd.concat([st.session_state.basket, df_to_add], ignore_index=True)
+                combined = combined.drop_duplicates(subset=["codice"]).reset_index(drop=True)
+                st.session_state.basket = combined
+
+                st.session_state.res_select_all_toggle = False
+                st.session_state.reset_res_selection = True
+                st.session_state.flash = {"type": "success", "msg": f"Aggiunti {len(df_to_add)} articoli al paniere.", "shown": False}
+
+                st.session_state.active_tab = "Prodotti"
+                st.rerun()
+            else:
+                st.info("Seleziona almeno un articolo dalla griglia.")
+
+    # PANIERE
+    if st.session_state.active_tab == "Prodotti":
+        basket = st.session_state.basket.copy()
+
+        col_sel, col_rm, col_xls, col_pdf, _spacer = st.columns([1, 1, 1, 1, 10])
+
+        all_on_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
+        if col_sel.button("Deseleziona tutto il paniere" if all_on_b else "Seleziona tutto il paniere"):
+            st.session_state.basket_select_all_toggle = not all_on_b
+            st.session_state.reset_basket_selection = not st.session_state.basket_select_all_toggle
+
+        remove_btn = col_rm.button("🗑️ Rimuovi selezionati")
+
+        basket_sorted = st.session_state.basket.sort_values(
+            ["categoria", "tipologia", "provenienza", "prodotto"], kind="stable"
+        ).reset_index(drop=True)
+        export_df = with_fw_prefix(basket_sorted)[DISPLAY_COLUMNS].copy()
+
+        xbuf = make_excel(export_df)
+        col_xls.download_button(
+            "⬇️ Esporta Excel",
+            data=xbuf,
+            file_name="prodotti_selezionati.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+        pbuf = make_pdf(export_df)
+        col_pdf.download_button(
+            "⬇️ Crea PDF",
+            data=pbuf,
+            file_name="prodotti_selezionati.pdf",
+            mime="application/pdf",
+        )
+
+        default_sel_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
+        basket_display = with_fw_prefix(basket)[DISPLAY_COLUMNS].copy()
+        basket_display.insert(0, "rm", default_sel_b)
+
+        edited_basket = st.data_editor(
+            basket_display,
+            hide_index=True,
+            use_container_width=True,
+            num_rows="fixed",
+            column_config={
+                "rm": st.column_config.CheckboxColumn(label="", width=38, help="Seleziona per rimuovere"),
+                "codice": st.column_config.TextColumn(width=50),
+                "prodotto": st.column_config.TextColumn(width=380),
+                "prezzo": st.column_config.NumberColumn(format="€ %.2f", width=75),
+                "categoria": st.column_config.TextColumn(width=160),
+                "tipologia": st.column_config.TextColumn(width=160),
+                "provenienza": st.column_config.TextColumn(width=160),
+            },
+            disabled=["codice", "prodotto", "prezzo", "categoria", "tipologia", "provenienza"],
+            key="basket_editor",
+        )
+
+        if remove_btn:
+            selected_mask_b = edited_basket["rm"].fillna(False)
+            selected_codes_b = set(edited_basket.loc[selected_mask_b, "codice"].tolist())
+            if selected_codes_b:
+                st.session_state.basket = st.session_state.basket[
+                    ~st.session_state.basket["codice"].isin(selected_codes_b)
+                ].reset_index(drop=True)
+
+                st.session_state.basket_select_all_toggle = False
+                st.session_state.reset_basket_selection = True
+                st.session_state.flash = {"type": "success", "msg": "Rimossi articoli selezionati.", "shown": False}
+
+                st.session_state.active_tab = "Prodotti"
+                st.rerun()
+            else:
+                st.info("Seleziona almeno un articolo dal paniere.")
 
 # =========================
-# PANIERE (se attivo)
+# ENTRY POINT
 # =========================
-if st.session_state.active_tab == "Prodotti":
-    basket = st.session_state.basket.copy()
-
-    # Pulsanti in orizzontale e compatti
-    col_sel, col_rm, col_xls, col_pdf, _spacer = st.columns([1, 1, 1, 1, 10])
-
-    all_on_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
-    if col_sel.button("Deseleziona tutto il paniere" if all_on_b else "Seleziona tutto il paniere"):
-        st.session_state.basket_select_all_toggle = not all_on_b
-        st.session_state.reset_basket_selection = not st.session_state.basket_select_all_toggle
-
-    remove_btn = col_rm.button("🗑️ Rimuovi selezionati")
-
-    basket_sorted = st.session_state.basket.sort_values(
-        ["categoria", "tipologia", "provenienza", "prodotto"], kind="stable"
-    ).reset_index(drop=True)
-    export_df = with_fw_prefix(basket_sorted)[DISPLAY_COLUMNS].copy()
-
-    xbuf = make_excel(export_df)
-    col_xls.download_button(
-        "⬇️ Esporta Excel",
-        data=xbuf,
-        file_name="prodotti_selezionati.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
-
-    pbuf = make_pdf(export_df)
-    col_pdf.download_button(
-        "⬇️ Crea PDF",
-        data=pbuf,
-        file_name="prodotti_selezionati.pdf",
-        mime="application/pdf",
-    )
-
-    default_sel_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
-    basket_display = with_fw_prefix(basket)[DISPLAY_COLUMNS].copy()
-    basket_display.insert(0, "rm", default_sel_b)
-
-    edited_basket = st.data_editor(
-        basket_display,
-        hide_index=True,
-        use_container_width=True,
-        num_rows="fixed",
-        column_config={
-            "rm": st.column_config.CheckboxColumn(label="", width=38, help="Seleziona per rimuovere"),
-            "codice": st.column_config.TextColumn(width=50),
-            "prodotto": st.column_config.TextColumn(width=380),
-            "prezzo": st.column_config.NumberColumn(format="€ %.2f", width=75),
-            "categoria": st.column_config.TextColumn(width=160),
-            "tipologia": st.column_config.TextColumn(width=160),
-            "provenienza": st.column_config.TextColumn(width=160),
-        },
-        disabled=["codice", "prodotto", "prezzo", "categoria", "tipologia", "provenienza"],
-        key="basket_editor",
-    )
-
-    if remove_btn:
-        selected_mask_b = edited_basket["rm"].fillna(False)
-        selected_codes_b = set(edited_basket.loc[selected_mask_b, "codice"].tolist())
-        if selected_codes_b:
-            st.session_state.basket = st.session_state.basket[
-                ~st.session_state.basket["codice"].isin(selected_codes_b)
-            ].reset_index(drop=True)
-
-            st.session_state.basket_select_all_toggle = False
-            st.session_state.reset_basket_selection = True
-            st.session_state.flash = {"type": "success", "msg": "Rimossi articoli selezionati.", "shown": False}
-
-            st.session_state.active_tab = "Prodotti"
-            st.rerun()
-        else:
-            st.info("Seleziona almeno un articolo dal paniere.")
-
-
-
-
-
-
-
-
+if not st.session_state.authenticated:
+    login_view()
+else:
+    run_app()
