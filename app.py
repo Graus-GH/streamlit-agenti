@@ -11,7 +11,7 @@ from fpdf import FPDF
 st.set_page_config(page_title="✨GRAUS Proposta Clienti", layout="wide")
 
 # =========================
-# CSS – radio (tabs) + login card
+# CSS – radio (tabs) + login card + sidebar footer + logo right
 # =========================
 st.markdown("""
 <style>
@@ -53,6 +53,18 @@ div[data-testid="stRadio"] [role="radio"]:hover{
   padding: 18px;
   background: #ffffff;
 }
+
+/* Sidebar: porta l'ultimo blocco (user/logout) in fondo */
+section[data-testid="stSidebar"] .block-container{
+  display: flex; flex-direction: column; height: 100%;
+}
+section[data-testid="stSidebar"] .block-container .stVerticalBlock:last-child{
+  margin-top: auto;
+  border-top: 1px solid #eee; padding-top: 10px;
+}
+
+/* Header: wrapper per allineare logo a destra */
+.header-right { text-align: right; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -78,7 +90,6 @@ st.session_state.setdefault("display_name", None)
 
 def login_view():
     def norm(s: str) -> str:
-        # normalizza spazi (anche NBSP), toglie spazi ai lati
         return (s or "").replace("\u00A0", " ").strip()
 
     st.title("🔐 Accesso richiesto")
@@ -92,15 +103,12 @@ def login_view():
             u_key = norm(u_in).lower()
             pwd = norm(p_in)
 
-            # 1) prova con username (case-insensitive)
             rec = USERS.get(u_key)
-
-            # 2) fallback: consenti login col Nome visualizzato
             if not rec:
                 for uname, info in USERS.items():
                     if norm(info["name"]).lower() == u_key:
                         rec = info
-                        u_key = uname  # salva lo username reale
+                        u_key = uname
                         break
 
             if rec and pwd == rec["password"]:
@@ -123,11 +131,9 @@ FW_SHEET_ID = "1D4-zgwpAGiWDCpPwDVipAD7Nlpi4aesFwRRpud2W-rk"
 FW_GID = "1549810072"
 
 def gsheet_csv_export_url(sheet_id: str, gid: str) -> str:
-    # endpoint standard CSV (richiede permesso "Chiunque con il link: Visualizzatore")
     return f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
 
 def gsheet_csv_gviz_url(sheet_id: str, gid: str) -> str:
-    # fallback gviz → CSV (utile se export dà 403/429 temporanei)
     return f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&gid={gid}"
 
 BASE_URLS = [gsheet_csv_export_url(SHEET_ID, GID), gsheet_csv_gviz_url(SHEET_ID, GID)]
@@ -323,29 +329,25 @@ def run_app():
     df_base["is_fw"] = False
 
     # HEADER
-    h1, h2 = st.columns([4, 1])
-    with h1:
+    left, spacer, right = st.columns([6, 4, 2])
+    with left:
         st.title("✨GRAUS Proposta Clienti")
-        st.caption(f"👤 Accesso: {st.session_state.display_name}")
-    with h2:
-        st.image(
-            "https://res.cloudinary.com/dct4tiqsl/image/upload/v1754315051/LogoGraus_j7d5jo.png",
-            width=130,
+        # (rimosso il caption utente dall'header: ora in fondo alla sidebar)
+    with right:
+        st.markdown(
+            "<div class='header-right'>"
+            "<img src='https://res.cloudinary.com/dct4tiqsl/image/upload/v1754315051/LogoGraus_j7d5jo.png' width='130'/>"
+            "</div>",
+            unsafe_allow_html=True
         )
 
-    # Info utente + Logout in sidebar (sopra la ricerca)
+    # ==== SIDEBAR ====
     with st.sidebar:
-        lcol, rcol = st.columns([3,1])
-        with lcol:
-            st.caption(f"👤 {st.session_state.display_name}")
-        with rcol:
-            if st.button("Logout"):
-                for k in ["authenticated", "username", "display_name"]:
-                    st.session_state[k] = None if k != "authenticated" else False
-                st.rerun()
+        sb_top = st.container()
+        sb_bottom = st.container()  # verrà spinto in fondo via CSS
 
-    # SIDEBAR – Ricerca
-    with st.sidebar:
+    # SIDEBAR – Ricerca (parte alta)
+    with sb_top:
         st.header("🔎 Ricerca")
         with st.form("search_form_sidebar", clear_on_submit=False):
             q = st.text_input(
@@ -410,13 +412,30 @@ def run_app():
     if st.session_state.active_tab == "Ricerca":
         st.caption(f"Risultati: {len(df_res)}")
 
-        c_toggle, _ = st.columns([3, 7])
-        all_on = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
-        if c_toggle.button("Deseleziona tutti i risultati" if all_on else "Seleziona tutti i risultati"):
-            st.session_state.res_select_all_toggle = not all_on
-            st.session_state.reset_res_selection = not st.session_state.res_select_all_toggle
-            st.rerun()
+        # Pulsanti affiancati (come in Prodotti): Seleziona/Deseleziona + Aggiungi
+        col_sel, col_add, _spacer = st.columns([1, 1, 10])
 
+        all_on = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
+        with col_sel:
+            if st.button("Deseleziona tutti i risultati" if all_on else "Seleziona tutti i risultati", key="res_toggle_btn"):
+                st.session_state.res_select_all_toggle = not all_on
+                st.session_state.reset_res_selection = not st.session_state.res_select_all_toggle
+                st.rerun()
+
+        add_btn = col_add.button("➕ Aggiungi selezionati al paniere", type="primary", key="add_to_basket_btn")
+
+        # Flash message (mostrata sotto i pulsanti)
+        if st.session_state.flash:
+            f = st.session_state.flash
+            {"success": st.success, "info": st.info, "warning": st.warning, "error": st.error}.get(
+                f.get("type", "success"), st.success
+            )(f.get("msg", ""))
+            if not f.get("shown", False):
+                st.session_state.flash["shown"] = True
+            else:
+                st.session_state.flash = None
+
+        # Griglia risultati
         default_sel = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
         df_res_display = with_fw_prefix(df_res)[DISPLAY_COLUMNS].copy()
         df_res_display.insert(0, "sel", default_sel)
@@ -438,19 +457,6 @@ def run_app():
             disabled=["codice", "prodotto", "prezzo", "categoria", "tipologia", "provenienza"],
             key="res_editor",
         )
-
-        st.divider()
-        add_btn = st.button("➕ Aggiungi selezionati al paniere", type="primary")
-
-        if st.session_state.flash:
-            f = st.session_state.flash
-            {"success": st.success, "info": st.info, "warning": st.warning, "error": st.error}.get(
-                f.get("type", "success"), st.success
-            )(f.get("msg", ""))
-            if not f.get("shown", False):
-                st.session_state.flash["shown"] = True
-            else:
-                st.session_state.flash = None
 
         if add_btn:
             selected_mask = edited_res["sel"].fillna(False)
@@ -543,6 +549,17 @@ def run_app():
             else:
                 st.info("Seleziona almeno un articolo dal paniere.")
 
+    # SIDEBAR – Footer (utente + logout) in fondo
+    with sb_bottom:
+        lcol, rcol = st.columns([3,1])
+        with lcol:
+            st.caption(f"👤 {st.session_state.display_name}")
+        with rcol:
+            if st.button("Logout"):
+                for k in ["authenticated", "username", "display_name"]:
+                    st.session_state[k] = None if k != "authenticated" else False
+                st.rerun()
+
 # =========================
 # ENTRY POINT
 # =========================
@@ -550,3 +567,4 @@ if not st.session_state.authenticated:
     login_view()
 else:
     run_app()
+
