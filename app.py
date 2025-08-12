@@ -44,8 +44,7 @@ try:
     auth_status = st.session_state.get("authentication_status")
     name       = st.session_state.get("name")
     username   = st.session_state.get("username")
-except TypeError:
-    name, auth_status, username = authenticator.login("Login", "main", key="auth_login")
+
 
 if auth_status is False:
     st.error("Credenziali non valide.")
@@ -497,6 +496,7 @@ if st.session_state.active_tab == "Prodotti":
             st.rerun()
         else:
             st.info("Seleziona almeno un articolo dal paniere.")
+
 
 
 
