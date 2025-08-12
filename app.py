@@ -18,47 +18,42 @@ st.set_page_config(page_title="✨GRAUS Proposta Clienti", layout="wide")
 # =========================
 st.markdown("""
 <style>
-/* ... (tuo CSS esistente) ... */
-
-/* "Tabs" controller orizzontale (radio) – contenitore con bordo */
-div[role="radiogroup"]{
+/* Contenitore con bordo attorno al radio (tabs) */
+div[data-testid="stRadio"] > div[role="radiogroup"]{
   display: inline-flex !important;
   gap: 8px !important;
   padding: 6px;
-  border: 1px solid #cbd5e1;          /* grigio chiaro */
+  border: 1px solid #cbd5e1;    /* bordo grigio chiaro */
   border-radius: 12px;
   background: #ffffff;
-  width: fit-content;                  /* evita di occupare tutta la riga */
   margin: 6px 0 12px 0;
 }
 
-/* Ogni "tab" come pill */
-div[role="radiogroup"] label{
+/* Ogni opzione come una "pill" */
+div[data-testid="stRadio"] [role="radio"]{
   padding: 6px 12px;
   border: 1px solid transparent;
   border-radius: 10px;
   cursor: pointer;
   font-weight: 500;
   transition: background-color .15s ease, border-color .15s ease;
+  display: inline-flex;          /* assicura il padding */
+  align-items: center;
 }
 
-/* Evidenzia TAB attivo (blu leggero) */
-div[role="radiogroup"] label:has([role="radio"][aria-checked="true"]){
-  background: #eaf2ff;                 /* blu molto leggero */
-  border-color: #93c5fd;               /* bordo blu tenue */
-}
-
-/* Fallback: nel caso la struttura DOM vari */
-div[role="radio"][aria-checked="true"]{
-  background: #eaf2ff;
-  border: 1px solid #93c5fd;
-  border-radius: 10px;
+/* Attivo: blu leggero */
+div[data-testid="stRadio"] [role="radio"][aria-checked="true"]{
+  background: #eaf2ff;           /* blu molto leggero */
+  border-color: #93c5fd;         /* bordo blu tenue */
 }
 
 /* Hover gradevole */
-div[role="radiogroup"] label:hover{ background: #f1f5f9; }
+div[data-testid="stRadio"] [role="radio"]:hover{
+  background: #f1f5f9;
+}
 </style>
 """, unsafe_allow_html=True)
+
 
 # =========================
 # CONFIG – ORIGINE DATI
@@ -463,6 +458,7 @@ if st.session_state.active_tab == "Prodotti":
             st.rerun()
         else:
             st.info("Seleziona almeno un articolo dal paniere.")
+
 
 
 
