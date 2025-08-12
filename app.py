@@ -356,23 +356,28 @@ if st.session_state.tab_choice == "search":
         else:
             st.session_state.flash = None
 
-    if add_btn:
-        selected_mask = edited_res["sel"].fillna(False)
-        selected_codes = set(edited_res.loc[selected_mask, "codice"].tolist())
-        if selected_codes:
-            df_to_add = df_res[df_res["codice"].isin(selected_codes)]
-            combined = pd.concat([st.session_state.basket, df_to_add], ignore_index=True)
-            combined = combined.drop_duplicates(subset=["codice"]).reset_index(drop=True)
-            st.session_state.basket = combined
+if add_btn:
+    selected_mask = edited_res["sel"].fillna(False)
+    selected_codes = set(edited_res.loc[selected_mask, "codice"].tolist())
+    if selected_codes:
+        df_to_add = df_res[df_res["codice"].isin(selected_codes)]
+        combined = pd.concat([st.session_state.basket, df_to_add], ignore_index=True)
+        combined = combined.drop_duplicates(subset=["codice"]).reset_index(drop=True)
+        st.session_state.basket = combined
 
-            st.session_state.res_select_all_toggle = False
-            st.session_state.reset_res_selection = True
-            st.session_state.flash = {"type": "success", "msg": f"Aggiunti {len[df_to_add]} articoli al paniere.", "shown": False}
+        st.session_state.res_select_all_toggle = False
+        st.session_state.reset_res_selection = True
+        st.session_state.flash = {
+            "type": "success",
+            "msg": f"Aggiunti {len(df_to_add)} articoli al paniere.",
+            "shown": False
+        }
 
-            st.session_state.tab_choice = "basket"  # vai al paniere
-            st.rerun()
-        else:
-            st.info("Seleziona almeno un articolo dalla griglia.")
+        st.session_state.tab_choice = "basket"  # vai al paniere
+        st.rerun()
+    else:
+        st.info("Seleziona almeno un articolo dalla griglia.")
+
 
 # =========================
 # PANIERE
@@ -449,3 +454,4 @@ if st.session_state.tab_choice == "basket":
             st.rerun()
         else:
             st.info("Seleziona almeno un articolo dal paniere.")
+
