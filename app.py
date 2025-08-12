@@ -7,63 +7,8 @@ import pandas as pd
 import requests
 import streamlit as st
 from fpdf import FPDF
-import streamlit_authenticator as stauth
-from collections.abc import Mapping
-
-import streamlit as st
-import streamlit_authenticator as stauth
-from collections.abc import Mapping
 
 st.set_page_config(page_title="✨GRAUS Proposta Clienti", layout="wide")
-
-# --- AUTH (plaintext nei Secrets + auto_hash; API nuova con fallback) ---
-if "auth" not in st.secrets:
-    st.error("Config di autenticazione mancante nei Secrets: sezione [auth].")
-    st.stop()
-
-def to_plain_dict(obj):
-    if isinstance(obj, Mapping):
-        return {k: to_plain_dict(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [to_plain_dict(v) for v in obj]
-    return obj
-
-cfg = to_plain_dict(st.secrets["auth"])        # st.secrets -> dict mutabile
-credentials = cfg["credentials"]
-cookie      = cfg["cookie"]
-
-authenticator = stauth.Authenticate(
-    credentials,
-    cookie["name"],
-    cookie["key"],
-    cookie["expiry_days"],
-    auto_hash=True,   # password in chiaro nei Secrets -> hash automatico
-)
-
-# PROVA API NUOVA (non ritorna tuple) -> legge da session_state
-try:
-    authenticator.login(location="main", key="auth_login")
-    auth_status = st.session_state.get("authentication_status")
-    name       = st.session_state.get("name")
-    username   = st.session_state.get("username")
-except TypeError:
-    # FALLBACK API VECCHIA (ritorna la tupla)
-    name, auth_status, username = authenticator.login("Login", "main", key="auth_login")
-
-if auth_status is False:
-    st.error("Credenziali non valide.")
-    st.stop()
-elif auth_status is None:
-    st.info("Inserisci username e password per accedere.")
-    st.stop()
-else:
-    try:
-        authenticator.logout(button_name="Logout", location="sidebar", key="auth_logout")
-    except TypeError:
-        authenticator.logout("Logout", "sidebar", key="auth_logout")
-    st.sidebar.write(f"👤 {name}")
-# --- /AUTH ---
-
 
 # =========================
 # CSS – sidebar, checkbox arancione, pulsanti compatti
@@ -499,22 +444,3 @@ if st.session_state.active_tab == "Prodotti":
             st.rerun()
         else:
             st.info("Seleziona almeno un articolo dal paniere.")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
