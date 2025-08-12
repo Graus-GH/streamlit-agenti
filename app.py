@@ -84,7 +84,7 @@ def login_view():
     st.title("🔐 Accesso richiesto")
     st.markdown('<div class="login-card">', unsafe_allow_html=True)
     with st.form("login_form", clear_on_submit=False):
-        u_in = st.text_input("Username (es. merch) o Nome", placeholder="merch / Kristin / ...")
+        u_in = st.text_input("Username (es. merch) o Nome", placeholder="inserisci il Tuo nome utente...")
         p_in = st.text_input("Password", type="password")
         ok = st.form_submit_button("Accedi")
 
@@ -113,10 +113,7 @@ def login_view():
                 st.error("Credenziali non valide. Controlla maiuscole/spazi.")
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # promemoria utenti validi (per evitare confusione)
-    with st.expander("Vedi utenti disponibili"):
-        st.write(", ".join(USERS.keys()))
-        st.caption("Esempio rapido: **merch / Sterch**")
+
 
 
 # =========================
@@ -520,6 +517,7 @@ if not st.session_state.authenticated:
     login_view()
 else:
     run_app()
+
 
 
 
