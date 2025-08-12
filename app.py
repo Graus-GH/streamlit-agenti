@@ -306,35 +306,35 @@ with tab_search:
 with tab_basket:
     basket = st.session_state.basket.copy()
 
-    # CSS per avvicinare i pulsanti e partire a sinistra
+    # CSS per pulsanti in riga e vicini
     st.markdown("""
     <style>
     div.button-row {
         display: flex;
-        gap: 4px; /* spazio minimo tra pulsanti */
+        flex-wrap: wrap;
+        gap: 6px; /* spazio minimo tra pulsanti */
         margin-bottom: 8px;
     }
-    div.button-row > div.stButton {
-        margin: 0;
-        padding: 0;
+    div.button-row > div {
+        display: inline-block;
     }
     </style>
     """, unsafe_allow_html=True)
 
-    # RIGA PULSANTI COMPATTA
+    # RIGA PULSANTI ORIZZONTALE
     st.markdown('<div class="button-row">', unsafe_allow_html=True)
 
-    # Pulsante seleziona/deseleziona tutto
+    # Col 1: seleziona/deseleziona tutto
     all_on_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
     if st.button("Deseleziona tutto il paniere" if all_on_b else "Seleziona tutto il paniere"):
         st.session_state.basket_select_all_toggle = not all_on_b
         st.session_state.reset_basket_selection = not st.session_state.basket_select_all_toggle
         st.rerun()
 
-    # Pulsante rimuovi
+    # Col 2: rimuovi
     remove_btn = st.button("🗑️ Rimuovi selezionati", type="primary")
 
-    # Esporta Excel
+    # Col 3: Excel
     basket_sorted = st.session_state.basket.sort_values(
         ["categoria", "tipologia", "provenienza", "prodotto"], kind="stable"
     ).reset_index(drop=True)
@@ -347,7 +347,7 @@ with tab_basket:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
-    # Esporta PDF
+    # Col 4: PDF
     pbuf = make_pdf(export_df)
     st.download_button(
         "⬇️ Crea PDF",
@@ -381,6 +381,7 @@ with tab_basket:
         key="basket_editor",
     )
 
+    # Rimozione elementi
     if remove_btn:
         to_remove = set(edited_basket.loc[edited_basket["rm"].fillna(False), "codice"].tolist())
         if to_remove:
