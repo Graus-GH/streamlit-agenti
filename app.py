@@ -305,19 +305,55 @@ with tab_search:
 
 with tab_basket:
     basket = st.session_state.basket.copy()
-    c_toggle_b, _ = st.columns([3, 7])
+
+    # Riga con tutti i pulsanti
+    col_toggle, col_remove, col_excel, col_pdf = st.columns([3, 2, 2, 2])
+
+    # Pulsante seleziona/deseleziona tutto
     all_on_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
-    if c_toggle_b.button("Deseleziona tutto il paniere" if all_on_b else "Seleziona tutto il paniere"):
+    if col_toggle.button("Deseleziona tutto il paniere" if all_on_b else "Seleziona tutto il paniere"):
         st.session_state.basket_select_all_toggle = not all_on_b
         st.session_state.reset_basket_selection = not st.session_state.basket_select_all_toggle
         st.rerun()
 
     default_sel_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
+
+    # Pulsante rimuovi selezionati
+    remove_btn = col_remove.button("🗑️ Rimuovi selezionati", type="primary")
+
+    # Ordina prima di esportare per avere ordine corretto nei file
+    basket_sorted = st.session_state.basket.sort_values(
+        ["categoria", "tipologia", "provenienza", "prodotto"], kind="stable"
+    ).reset_index(drop=True)
+    export_df = with_fw_prefix(basket_sorted)[DISPLAY_COLUMNS].copy()
+
+    # Pulsante Esporta Excel
+    xbuf = make_excel(export_df)
+    col_excel.download_button(
+        "⬇️ Esporta Excel",
+        data=xbuf,
+        file_name="prodotti_selezionati.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+    # Pulsante Crea PDF
+    pbuf = make_pdf(export_df)
+    col_pdf.download_button(
+        "⬇️ Crea PDF",
+        data=pbuf,
+        file_name="prodotti_selezionati.pdf",
+        mime="application/pdf",
+    )
+
+    # Tabella paniere
     basket_display = with_fw_prefix(basket)[DISPLAY_COLUMNS].copy()
     basket_display.insert(0, "rm", default_sel_b)
 
     edited_basket = st.data_editor(
-        basket_display, hide_index=True, use_container_width=True, num_rows="fixed",
+        basket_display,
+        hide_index=True,
+        use_container_width=True,
+        num_rows="fixed",
         column_config={
             "rm": st.column_config.CheckboxColumn(label="", width=38, help="Seleziona per rimuovere"),
             "codice": st.column_config.TextColumn(width=120),
@@ -327,35 +363,20 @@ with tab_basket:
             "tipologia": st.column_config.TextColumn(width=160),
             "provenienza": st.column_config.TextColumn(width=160),
         },
-        disabled=["codice","prodotto","prezzo","categoria","tipologia","provenienza"],
+        disabled=["codice", "prodotto", "prezzo", "categoria", "tipologia", "provenienza"],
         key="basket_editor",
     )
 
-    st.divider()
-    c1, c2, c3 = st.columns([1, 1, 1])
-    remove_btn = c1.button("🗑️ Rimuovi selezionati", type="primary")
-
-    basket_sorted = st.session_state.basket.sort_values(
-        ["categoria","tipologia","provenienza","prodotto"], kind="stable"
-    ).reset_index(drop=True)
-
-    export_df = with_fw_prefix(basket_sorted)[DISPLAY_COLUMNS].copy()
-    xbuf = make_excel(export_df)
-    c2.download_button("⬇️ Esporta Excel", data=xbuf,
-                       file_name="prodotti_selezionati.xlsx",
-                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-    pbuf = make_pdf(export_df)
-    c3.download_button("⬇️ Crea PDF", data=pbuf,
-                       file_name="prodotti_selezionati.pdf", mime="application/pdf")
-
+    # Azione rimozione selezionati
     if remove_btn:
         to_remove = set(edited_basket.loc[edited_basket["rm"].fillna(False), "codice"].tolist())
         if to_remove:
-            st.session_state.basket = st.session_state.basket[~st.session_state.basket["codice"].isin(to_remove)].reset_index(drop=True)
+            st.session_state.basket = st.session_state.basket[
+                ~st.session_state.basket["codice"].isin(to_remove)
+            ].reset_index(drop=True)
             st.session_state.basket_select_all_toggle = False
             st.session_state.reset_basket_selection = True
-            st.success("Rimossi articoli selezionati."); st.rerun()
+            st.success("Rimossi articoli selezionati.")
+            st.rerun()
         else:
             st.info("Seleziona almeno un articolo da rimuovere.")
-
