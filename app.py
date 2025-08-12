@@ -29,7 +29,11 @@ authenticator = stauth.Authenticate(
     auto_hash=True,   # accetta password in chiaro nei Secrets e le hasha al volo
 )
 
-name, auth_status, username = authenticator.login("Login", "main")
+name, auth_status, username = authenticator.login(
+    location="main",
+    fields={"Form name": "Login"}  # opzionale: titolo del form
+)
+
 
 if auth_status is False:
     st.error("Credenziali non valide.")
@@ -38,7 +42,7 @@ elif auth_status is None:
     st.info("Inserisci username e password per accedere.")
     st.stop()
 else:
-    authenticator.logout("Logout", "sidebar")
+    authenticator.logout(button_name="Logout", location="sidebar")
     st.sidebar.write(f"👤 {name}")
 # --- /AUTH ---
 
@@ -479,6 +483,7 @@ if st.session_state.active_tab == "Prodotti":
             st.rerun()
         else:
             st.info("Seleziona almeno un articolo dal paniere.")
+
 
 
 
