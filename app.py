@@ -244,7 +244,7 @@ with st.sidebar:
             placeholder="Es. 'riesling alto adige 0,75'",
         )
         st.checkbox(
-            "Includi FINE WINES (⏳)\nDisponibilità salvo conferma e consegna minimo 3 settimane.",
+            "Includi FINE WINES\n⏳ disponibilità salvo conferma e consegna minimo 3 settimane.",
             value=st.session_state.include_fw,
             key="include_fw",
         )
