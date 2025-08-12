@@ -306,20 +306,20 @@ with tab_search:
 with tab_basket:
     basket = st.session_state.basket.copy()
 
-    # Riga unica con pulsanti a sinistra
-    col_toggle, col_remove, col_excel, col_pdf, _ = st.columns([2, 2, 2, 2, 8])
+    # Pulsanti in linea ravvicinata
+    b1, b2, b3, b4, _ = st.columns([1.6, 1.6, 1.2, 1.0, 6])
 
-    # Pulsante seleziona/deseleziona tutto
+    # Seleziona/Deseleziona tutto
     all_on_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
-    if col_toggle.button("Deseleziona tutto" if all_on_b else "Seleziona tutto"):
+    if b1.button("✅ Tutto" if not all_on_b else "❌ Niente"):
         st.session_state.basket_select_all_toggle = not all_on_b
         st.session_state.reset_basket_selection = not st.session_state.basket_select_all_toggle
         st.rerun()
 
     default_sel_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
 
-    # Pulsante rimuovi selezionati
-    remove_btn = col_remove.button("🗑️ Rimuovi selezionati", type="primary")
+    # Rimuovi selezionati
+    remove_btn = b2.button("🗑️", help="Rimuovi selezionati", type="primary")
 
     # Ordina paniere prima di esportare
     basket_sorted = st.session_state.basket.sort_values(
@@ -327,22 +327,22 @@ with tab_basket:
     ).reset_index(drop=True)
     export_df = with_fw_prefix(basket_sorted)[DISPLAY_COLUMNS].copy()
 
-    # Pulsante Esporta Excel
+    # Esporta Excel
     xbuf = make_excel(export_df)
-    col_excel.download_button(
-        "⬇️ Excel",
-        data=xbuf,
+    b3.download_button(
+        "📊", data=xbuf,
         file_name="prodotti_selezionati.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        help="Esporta Excel"
     )
 
-    # Pulsante Crea PDF
+    # Crea PDF
     pbuf = make_pdf(export_df)
-    col_pdf.download_button(
-        "⬇️ PDF",
-        data=pbuf,
+    b4.download_button(
+        "📄", data=pbuf,
         file_name="prodotti_selezionati.pdf",
         mime="application/pdf",
+        help="Crea PDF"
     )
 
     # Tabella paniere
