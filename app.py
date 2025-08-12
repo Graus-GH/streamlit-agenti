@@ -11,7 +11,7 @@ from fpdf import FPDF
 st.set_page_config(page_title="✨GRAUS Proposta Clienti", layout="wide")
 
 # =========================
-# CSS – radio (tabs)
+# CSS – radio (tabs) + login card
 # =========================
 st.markdown("""
 <style>
@@ -69,7 +69,7 @@ USERS = {
     "luca":      {"name": "Luca",                 "password": ">Luca33"},
     "david":     {"name": "David",                "password": ">Dav!d"},
     "claudio":   {"name": "Claudio",              "password": "Claud!O"},
-    "elsa":   {"name": "Claudio",              "password": "ElsA!"},
+    "elsa":      {"name": "Elsa",                 "password": "ElsA!"},
 }
 
 st.session_state.setdefault("authenticated", False)
@@ -95,7 +95,7 @@ def login_view():
             # 1) prova con username (case-insensitive)
             rec = USERS.get(u_key)
 
-            # 2) in fallback, consenti login col Nome visualizzato
+            # 2) fallback: consenti login col Nome visualizzato
             if not rec:
                 for uname, info in USERS.items():
                     if norm(info["name"]).lower() == u_key:
@@ -113,19 +113,25 @@ def login_view():
                 st.error("Credenziali non valide. Controlla maiuscole/spazi.")
     st.markdown("</div>", unsafe_allow_html=True)
 
-
-
-
 # =========================
-# CONFIG – ORIGINE DATI
+# CONFIG – ORIGINE DATI (Chiunque con il link: Visualizzatore)
 # =========================
 SHEET_ID = "10BFJQTV1yL69cotE779zuR8vtG5NqKWOVH0Uv1AnGaw"
 GID = "707323537"
-CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
 
 FW_SHEET_ID = "1D4-zgwpAGiWDCpPwDVipAD7Nlpi4aesFwRRpud2W-rk"
 FW_GID = "1549810072"
-FW_CSV_URL = f"https://docs.google.com/spreadsheets/d/{FW_SHEET_ID}/export?format=csv&gid={FW_GID}"
+
+def gsheet_csv_export_url(sheet_id: str, gid: str) -> str:
+    # endpoint standard CSV (richiede permesso "Chiunque con il link: Visualizzatore")
+    return f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+
+def gsheet_csv_gviz_url(sheet_id: str, gid: str) -> str:
+    # fallback gviz → CSV (utile se export dà 403/429 temporanei)
+    return f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&gid={gid}"
+
+BASE_URLS = [gsheet_csv_export_url(SHEET_ID, GID), gsheet_csv_gviz_url(SHEET_ID, GID)]
+FW_URLS   = [gsheet_csv_export_url(FW_SHEET_ID, FW_GID), gsheet_csv_gviz_url(FW_SHEET_ID, FW_GID)]
 
 COL_MAP = {"codice": 0, "prodotto": 2, "categoria": 5, "tipologia": 6, "provenienza": 7, "prezzo": 8}
 DISPLAY_COLUMNS = ["codice", "prodotto", "prezzo", "categoria", "tipologia", "provenienza"]
@@ -135,42 +141,63 @@ SEARCH_FIELDS = ["codice", "prodotto", "categoria", "tipologia", "provenienza"]
 # UTILS
 # =========================
 @st.cache_data(ttl=600)
-def load_data(url: str) -> pd.DataFrame:
-    r = requests.get(url)
-    r.raise_for_status()
-    df_raw = pd.read_csv(io.BytesIO(r.content))
-    df = pd.DataFrame({name: df_raw.iloc[:, idx] for name, idx in COL_MAP.items()})
+def load_data(url_or_urls) -> pd.DataFrame:
+    import time
+    urls = [url_or_urls] if isinstance(url_or_urls, str) else list(url_or_urls)
+    last_exc = None
 
-    for c in ["prodotto", "categoria", "tipologia", "provenienza"]:
-        df[c] = df[c].astype(str).fillna("").str.strip()
+    for url in urls:
+        for attempt in range(3):
+            try:
+                r = requests.get(
+                    url,
+                    headers={"User-Agent": "Mozilla/5.0 (Streamlit App)"},
+                    timeout=20,
+                )
+                if r.status_code != 200:
+                    last_exc = requests.HTTPError(f"HTTP {r.status_code} on {url}", response=r)
+                    time.sleep(0.8 * (attempt + 1))
+                    continue
 
-    def to_float(x):
-        if pd.isna(x):
-            return np.nan
-        s = str(x).strip().replace("€", "").replace(" ", "")
-        if "," in s and "." in s:
-            s = s.replace(".", "").replace(",", ".")
-        else:
-            s = s.replace(",", ".")
-        try:
-            return float(s)
-        except Exception:
-            return np.nan
+                df_raw = pd.read_csv(io.BytesIO(r.content))
+                df = pd.DataFrame({name: df_raw.iloc[:, idx] for name, idx in COL_MAP.items()})
 
-    df["prezzo"] = df["prezzo"].apply(to_float)
+                for c in ["prodotto", "categoria", "tipologia", "provenienza"]:
+                    df[c] = df[c].astype(str).fillna("").str.strip()
 
-    def normalize_code(x: str) -> str:
-        s = re.sub("[^0-9]", "", str(x))
-        s = s.lstrip("0") or "0"
-        if len(s) > 2 and s.endswith("00"):
-            s = s[:-2] or "0"
-        return s
+                def to_float(x):
+                    if pd.isna(x):
+                        return np.nan
+                    s = str(x).strip().replace("€", "").replace(" ", "")
+                    if "," in s and "." in s:
+                        s = s.replace(".", "").replace(",", ".")
+                    else:
+                        s = s.replace(",", ".")
+                    try:
+                        return float(s)
+                    except Exception:
+                        return np.nan
 
-    df["codice"] = df["codice"].astype(str).apply(normalize_code)
+                df["prezzo"] = df["prezzo"].apply(to_float)
 
-    df = df[(df["codice"] != "") & (df["prodotto"] != "")]
-    df = df.sort_values(["prodotto", "codice"], kind="stable").reset_index(drop=True)
-    return df
+                def normalize_code(x: str) -> str:
+                    s = re.sub("[^0-9]", "", str(x))
+                    s = s.lstrip("0") or "0"
+                    if len(s) > 2 and s.endswith("00"):
+                        s = s[:-2] or "0"
+                    return s
+
+                df["codice"] = df["codice"].astype(str).apply(normalize_code)
+
+                df = df[(df["codice"] != "") & (df["prodotto"] != "")]
+                df = df.sort_values(["prodotto", "codice"], kind="stable").reset_index(drop=True)
+                return df
+
+            except requests.RequestException as e:
+                last_exc = e
+                time.sleep(0.8 * (attempt + 1))
+
+    raise last_exc if last_exc else RuntimeError("Errore nel download CSV")
 
 def tokenize_query(q: str) -> List[str]:
     return [t for t in re.split(r"\s+", q.strip()) if t]
@@ -286,7 +313,13 @@ def run_app():
 
     # DATA
     with st.spinner("Caricamento dati…"):
-        df_base = load_data(CSV_URL)
+        try:
+            df_base = load_data(BASE_URLS)
+        except Exception as e:
+            st.error("❌ Impossibile caricare il *listino base*. Verifica che il file sia su 'Chiunque con il link: Visualizzatore' e che ID/GID siano corretti.")
+            st.caption(f"Prova ad aprire in incognito: {BASE_URLS[0]}")
+            st.exception(e)
+            st.stop()
     df_base["is_fw"] = False
 
     # HEADER
@@ -328,12 +361,12 @@ def run_app():
             df_all = df_base.copy()
             if st.session_state.include_fw:
                 try:
-                    df_fw = load_data(FW_CSV_URL)
+                    df_fw = load_data(FW_URLS)
                     df_fw["is_fw"] = True
                     df_all = pd.concat([df_all, df_fw], ignore_index=True)
-                except requests.exceptions.HTTPError as e:
+                except Exception as e:
                     st.warning("⚠️ Impossibile caricare il foglio Fine Wines.")
-                    st.caption(f"Dettaglio: {e}")
+                    st.caption(str(e))
 
             tokens = tokenize_query(q) if q else []
             mask_text = (
@@ -360,7 +393,7 @@ def run_app():
             if submitted_sidebar:
                 st.session_state.active_tab = "Ricerca"
 
-    # Filtri applicati
+    # Filtri applicati (fuori dalla form)
     min_price = min(price_range[0], price_range[1])
     max_price = max(price_range[0], price_range[1])
     mask_price = df_after_text["prezzo"].fillna(0.0).between(min_price, max_price)
@@ -517,9 +550,3 @@ if not st.session_state.authenticated:
     login_view()
 else:
     run_app()
-
-
-
-
-
-
