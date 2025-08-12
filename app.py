@@ -306,41 +306,59 @@ with tab_search:
 with tab_basket:
     basket = st.session_state.basket.copy()
 
-    # RIGA UNICA con tutti i pulsanti
-    col_sel, col_rm, col_xls, col_pdf = st.columns([1.6, 1.3, 1.3, 1.3])
-    
+    # CSS per avvicinare i pulsanti e partire a sinistra
+    st.markdown("""
+    <style>
+    div.button-row {
+        display: flex;
+        gap: 4px; /* spazio minimo tra pulsanti */
+        margin-bottom: 8px;
+    }
+    div.button-row > div.stButton {
+        margin: 0;
+        padding: 0;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # RIGA PULSANTI COMPATTA
+    st.markdown('<div class="button-row">', unsafe_allow_html=True)
+
+    # Pulsante seleziona/deseleziona tutto
     all_on_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
-    if col_sel.button("Deseleziona tutto il paniere" if all_on_b else "Seleziona tutto il paniere"):
+    if st.button("Deseleziona tutto il paniere" if all_on_b else "Seleziona tutto il paniere"):
         st.session_state.basket_select_all_toggle = not all_on_b
         st.session_state.reset_basket_selection = not st.session_state.basket_select_all_toggle
         st.rerun()
 
-    remove_btn = col_rm.button("🗑️ Rimuovi selezionati", type="primary")
+    # Pulsante rimuovi
+    remove_btn = st.button("🗑️ Rimuovi selezionati", type="primary")
 
-    # Ordina paniere per esportazione
+    # Esporta Excel
     basket_sorted = st.session_state.basket.sort_values(
         ["categoria", "tipologia", "provenienza", "prodotto"], kind="stable"
     ).reset_index(drop=True)
-
     export_df = with_fw_prefix(basket_sorted)[DISPLAY_COLUMNS].copy()
-
     xbuf = make_excel(export_df)
-    col_xls.download_button(
+    st.download_button(
         "⬇️ Esporta Excel",
         data=xbuf,
         file_name="prodotti_selezionati.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
+    # Esporta PDF
     pbuf = make_pdf(export_df)
-    col_pdf.download_button(
+    st.download_button(
         "⬇️ Crea PDF",
         data=pbuf,
         file_name="prodotti_selezionati.pdf",
         mime="application/pdf",
     )
 
-    # Editor paniere
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # ---- TABELLA ----
     default_sel_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
     basket_display = with_fw_prefix(basket)[DISPLAY_COLUMNS].copy()
     basket_display.insert(0, "rm", default_sel_b)
@@ -363,7 +381,6 @@ with tab_basket:
         key="basket_editor",
     )
 
-    # Azione rimozione
     if remove_btn:
         to_remove = set(edited_basket.loc[edited_basket["rm"].fillna(False), "codice"].tolist())
         if to_remove:
