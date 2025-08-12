@@ -412,17 +412,21 @@ def run_app():
     if st.session_state.active_tab == "Ricerca":
         st.caption(f"Risultati: {len(df_res)}")
 
-        # Pulsanti affiancati (come in Prodotti): Seleziona/Deseleziona + Aggiungi
-        col_sel, col_add, _spacer = st.columns([1, 1, 10])
+# Pulsanti affiancati (come in Prodotti): Seleziona/Deseleziona + Aggiungi
+col_sel, col_add, _spacer = st.columns([1, 3, 8])  # ↑ aumenta il 3 se vuoi ancora più largo
 
-        all_on = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
-        with col_sel:
-            if st.button("Deseleziona tutti i risultati" if all_on else "Seleziona tutti i risultati", key="res_toggle_btn"):
-                st.session_state.res_select_all_toggle = not all_on
-                st.session_state.reset_res_selection = not st.session_state.res_select_all_toggle
-                st.rerun()
+all_on = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
+with col_sel:
+    if st.button("Deseleziona tutti i risultati" if all_on else "Seleziona tutti i risultati",
+                 key="res_toggle_btn"):
+        st.session_state.res_select_all_toggle = not all_on
+        st.session_state.reset_res_selection = not st.session_state.res_select_all_toggle
+        st.rerun()
 
-        add_btn = col_add.button("➕ Aggiungi selezionati al paniere", type="primary", key="add_to_basket_btn")
+add_btn = col_add.button("➕ Aggiungi selezionati al paniere",
+                         type="primary",
+                         key="add_to_basket_btn",
+                         use_container_width=True)  # 👈 riempie la colonna
 
         # Flash message (mostrata sotto i pulsanti)
         if st.session_state.flash:
@@ -567,4 +571,5 @@ if not st.session_state.authenticated:
     login_view()
 else:
     run_app()
+
 
