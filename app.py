@@ -306,12 +306,12 @@ with tab_search:
 with tab_basket:
     basket = st.session_state.basket.copy()
 
-    # Riga con tutti i pulsanti
-    col_toggle, col_remove, col_excel, col_pdf = st.columns([3, 2, 2, 2])
+    # Riga unica con pulsanti a sinistra
+    col_toggle, col_remove, col_excel, col_pdf, _ = st.columns([2, 2, 2, 2, 8])
 
     # Pulsante seleziona/deseleziona tutto
     all_on_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
-    if col_toggle.button("Deseleziona tutto il paniere" if all_on_b else "Seleziona tutto il paniere"):
+    if col_toggle.button("Deseleziona tutto" if all_on_b else "Seleziona tutto"):
         st.session_state.basket_select_all_toggle = not all_on_b
         st.session_state.reset_basket_selection = not st.session_state.basket_select_all_toggle
         st.rerun()
@@ -321,7 +321,7 @@ with tab_basket:
     # Pulsante rimuovi selezionati
     remove_btn = col_remove.button("🗑️ Rimuovi selezionati", type="primary")
 
-    # Ordina prima di esportare per avere ordine corretto nei file
+    # Ordina paniere prima di esportare
     basket_sorted = st.session_state.basket.sort_values(
         ["categoria", "tipologia", "provenienza", "prodotto"], kind="stable"
     ).reset_index(drop=True)
@@ -330,7 +330,7 @@ with tab_basket:
     # Pulsante Esporta Excel
     xbuf = make_excel(export_df)
     col_excel.download_button(
-        "⬇️ Esporta Excel",
+        "⬇️ Excel",
         data=xbuf,
         file_name="prodotti_selezionati.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -339,7 +339,7 @@ with tab_basket:
     # Pulsante Crea PDF
     pbuf = make_pdf(export_df)
     col_pdf.download_button(
-        "⬇️ Crea PDF",
+        "⬇️ PDF",
         data=pbuf,
         file_name="prodotti_selezionati.pdf",
         mime="application/pdf",
