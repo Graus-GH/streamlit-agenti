@@ -4,3 +4,4 @@ numpy
 requests
 fpdf2
 openpyxl
+streamlit-authenticator
