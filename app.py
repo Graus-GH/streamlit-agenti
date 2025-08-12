@@ -11,11 +11,11 @@ from fpdf import FPDF
 st.set_page_config(page_title="✨GRAUS Proposta Clienti", layout="wide")
 
 # =========================
-# CSS – checkbox arancione quando attivo + primary button
+# CSS – checkbox arancione quando attivo + primary button + sidebar compatta
 # =========================
 st.markdown("""
 <style>
-/* Checkbox a tutta larghezza */
+/* Checkbox a tutta larghezza (anche in sidebar) */
 div[data-testid="stForm"] div[data-testid="stCheckbox"] > label {
   width: 100%;
   display: flex;
@@ -41,6 +41,14 @@ div[data-testid="stForm"] div[data-testid="stCheckbox"] input[type="checkbox"] {
   background-color: #005caa;
   border-color: #005caa;
   color: #fff;
+}
+/* Sidebar: stringiamo spazi verticali dei form */
+section[data-testid="stSidebar"] div[data-testid="stForm"] label p {
+  margin-bottom: 2px !important;
+}
+section[data-testid="stSidebar"] div[data-testid="stNumberInputContainer"] input,
+section[data-testid="stSidebar"] input[type="text"] {
+  height: 34px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -242,33 +250,26 @@ with h1:
 with h2:
     st.image(
         "https://res.cloudinary.com/dct4tiqsl/image/upload/v1754315051/LogoGraus_j7d5jo.png",
-        width=130,  # non troppo grande
+        width=130,
     )
 
-basket_len = len(st.session_state.basket)
-tab_search, tab_basket = st.tabs(["Ricerca", f"Prodotti selezionati ({basket_len})"])
-
 # =========================
-# TAB: RICERCA
+# SIDEBAR – Ricerca compatta
 # =========================
-with tab_search:
+with st.sidebar:
+    st.header("🔎 Ricerca")
     with st.form("search_form", clear_on_submit=False):
-        # Layout responsive: ricerca a sinistra, filtri prezzo compatti a destra
-        col_search, col_price = st.columns([2, 1])
+        q = st.text_input(
+            "Cerca su codice, prodotto, categoria, tipologia, provenienza",
+            placeholder="Es. 'riesling alto adige 0,75'",
+        )
+        st.checkbox(
+            "Includi FINE WINES (⏳ disponibilità salvo conferma e ~3 settimane)",
+            value=st.session_state.include_fw,
+            key="include_fw",
+        )
 
-        # --- Colonna sinistra: Ricerca + FW ---
-        with col_search:
-            q = st.text_input(
-                "Cerca (multi-parola) su: codice, prodotto, categoria, tipologia, provenienza",
-                placeholder="Es. 'riesling alto adige 0,75'",
-            )
-            st.checkbox(
-                "Includi FINE WINES (⏳ disponibilità salvo conferma e almeno 3 settimane per consegna)",
-                value=st.session_state.include_fw,
-                key="include_fw",
-            )
-
-        # Costruisci dataset PARZIALE per bound dinamici
+        # Costruisci dataset PARZIALE per bound dinamici basati sul testo
         df_all = df_base.copy()
         if st.session_state.include_fw:
             try:
@@ -285,40 +286,47 @@ with tab_search:
             if tokens else pd.Series(True, index=df_all.index)
         )
         df_after_text = df_all.loc[mask_text]
+
         dyn_min, dyn_max = adaptive_price_bounds(df_after_text)
 
-        # --- Colonna destra: Box filtri prezzo compatti ---
-        with col_price:
-            with st.container(border=True):
-                cmin, cmax = st.columns(2)
-                with cmin:
-                    min_price_input = st.number_input(
-                        "Min", min_value=0.0, value=float(dyn_min), step=0.1, format="%.2f"
-                    )
-                with cmax:
-                    max_price_input = st.number_input(
-                        "Max", min_value=0.01, value=float(dyn_max), step=0.1, format="%.2f"
-                    )
-                max_for_slider = max(min_price_input, max_price_input)
-                price_range = st.slider(
-                    "Range",  # etichetta minima; la nascondiamo per compattezza
-                    min_value=0.0,
-                    max_value=max(0.01, round(max_for_slider, 2)),
-                    value=(float(min_price_input), float(max_price_input)),
-                    step=0.1,
-                    label_visibility="collapsed",
+        with st.container(border=True):
+            cmin, cmax = st.columns(2)
+            with cmin:
+                min_price_input = st.number_input(
+                    "Min", min_value=0.0, value=float(dyn_min), step=0.1, format="%.2f"
                 )
-
-        # Valori finali filtranti
-        min_price = min(price_range[0], price_range[1])
-        max_price = max(price_range[0], price_range[1])
+            with cmax:
+                max_price_input = st.number_input(
+                    "Max", min_value=0.01, value=float(dyn_max), step=0.1, format="%.2f"
+                )
+            max_for_slider = max(min_price_input, max_price_input)
+            price_range = st.slider(
+                "Range",
+                min_value=0.0,
+                max_value=max(0.01, round(max_for_slider, 2)),
+                value=(float(min_price_input), float(max_price_input)),
+                step=0.1,
+                label_visibility="collapsed",
+            )
 
         submitted = st.form_submit_button("Cerca")
 
-    # Applica anche il filtro prezzo
-    mask_price = df_after_text["prezzo"].fillna(0.0).between(min_price, max_price)
-    df_res = df_after_text.loc[mask_price].reset_index(drop=True)
+# Valori finali filtranti (fuori dai tab, così restano globali)
+min_price = min(price_range[0], price_range[1])
+max_price = max(price_range[0], price_range[1])
+mask_price = df_after_text["prezzo"].fillna(0.0).between(min_price, max_price)
+df_res = df_after_text.loc[mask_price].reset_index(drop=True)
 
+# =========================
+# TABS
+# =========================
+basket_len = len(st.session_state.basket)
+tab_search, tab_basket = st.tabs(["Ricerca", f"Prodotti selezionati ({basket_len})"])
+
+# =========================
+# TAB: RICERCA (risultati compatti, niente box in alto)
+# =========================
+with tab_search:
     st.caption(f"Risultati: {len(df_res)}")
 
     # Toggle risultati
