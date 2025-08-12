@@ -64,7 +64,7 @@ USERS = {
     "fdefazio":  {"name": "Francesco Defazio",    "password": "ciccio"},
     "kristin":   {"name": "Kristin",              "password": ">Smarter!"},
     "silvia":    {"name": "Silvia",               "password": ">Smarter!"},
-    "angelo":    {"name": "Angelo",               "password": ">NumeroUno"},
+    "angelo":    {"name": "Angelo",               "password": "NumeroUno"},
     "peppi":     {"name": "Peppi",                "password": ">Peppi25"},
     "luca":      {"name": "Luca",                 "password": ">Luca33"},
     "david":     {"name": "David",                "password": ">Dav!d"},
@@ -518,5 +518,6 @@ if not st.session_state.authenticated:
     login_view()
 else:
     run_app()
+
 
 
