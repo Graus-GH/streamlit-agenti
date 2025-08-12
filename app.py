@@ -1,24 +1,35 @@
-# --- ONE-SHOT: genera hash delle password, poi rimuovi ---
-SHOW_HASHER = False
+import streamlit as st
+import streamlit_authenticator as stauth
 
-if SHOW_HASHER:
-    from streamlit_authenticator.utilities.hasher import Hasher
-
-    plain_passwords = {
-        "merch": "Sterch",
-        "fdefazio": "ciccio",
-        "kristin": ">Smarter!",
-        "silvia": ">Smarter!",
-        "angelo": ">#NumeroUno",
-        "peppi": ">Peppi25",
-        "luca": ">Luca33",
-        "david": ">Dav!d",
+# Costruisci il dict 'credentials' a partire da st.secrets
+credentials = {
+    "usernames": {
+        uname: {
+            "name": st.secrets["credentials"]["usernames"][uname]["name"],
+            "password": st.secrets["credentials"]["usernames"][uname]["password"],
+        }
+        for uname in st.secrets["credentials"]["usernames"].keys()
     }
+}
 
-    for user, pwd in plain_passwords.items():
-        print(user, Hasher.hash(pwd))
-    import streamlit as st
-    st.stop()  # Evita che l'app prosegua mentre copi gli hash
+authenticator = stauth.Authenticate(
+    credentials,
+    cookie_name=st.secrets["cookie"]["name"],
+    key=st.secrets["cookie"]["key"],
+    cookie_expiry_days=st.secrets["cookie"]["expiry_days"],
+)
+
+authenticator.login()
+if st.session_state.get("authentication_status"):
+    authenticator.logout("Logout", "sidebar")
+    st.caption(f"✅ Utente: {st.session_state.get('name')} ({st.session_state.get('username')})")
+else:
+    if st.session_state.get("authentication_status") is False:
+        st.error("Credenziali errate")
+    else:
+        st.info("Effettua il login per continuare.")
+    st.stop()
+
 
 
 
@@ -468,6 +479,7 @@ if st.session_state.active_tab == "Prodotti":
             st.rerun()
         else:
             st.info("Seleziona almeno un articolo dal paniere.")
+
 
 
 
