@@ -306,46 +306,42 @@ with tab_search:
 with tab_basket:
     basket = st.session_state.basket.copy()
 
-    # Pulsanti in linea ravvicinata
-    b1, b2, b3, b4, _ = st.columns([1.6, 1.6, 1.2, 1.0, 6])
-
-    # Seleziona/Deseleziona tutto
+    # RIGA UNICA con tutti i pulsanti
+    col_sel, col_rm, col_xls, col_pdf = st.columns([1.6, 1.3, 1.3, 1.3])
+    
     all_on_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
-    if b1.button("✅ Tutto" if not all_on_b else "❌ Niente"):
+    if col_sel.button("Deseleziona tutto il paniere" if all_on_b else "Seleziona tutto il paniere"):
         st.session_state.basket_select_all_toggle = not all_on_b
         st.session_state.reset_basket_selection = not st.session_state.basket_select_all_toggle
         st.rerun()
 
-    default_sel_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
+    remove_btn = col_rm.button("🗑️ Rimuovi selezionati", type="primary")
 
-    # Rimuovi selezionati
-    remove_btn = b2.button("🗑️", help="Rimuovi selezionati", type="primary")
-
-    # Ordina paniere prima di esportare
+    # Ordina paniere per esportazione
     basket_sorted = st.session_state.basket.sort_values(
         ["categoria", "tipologia", "provenienza", "prodotto"], kind="stable"
     ).reset_index(drop=True)
+
     export_df = with_fw_prefix(basket_sorted)[DISPLAY_COLUMNS].copy()
 
-    # Esporta Excel
     xbuf = make_excel(export_df)
-    b3.download_button(
-        "📊", data=xbuf,
+    col_xls.download_button(
+        "⬇️ Esporta Excel",
+        data=xbuf,
         file_name="prodotti_selezionati.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        help="Esporta Excel"
     )
 
-    # Crea PDF
     pbuf = make_pdf(export_df)
-    b4.download_button(
-        "📄", data=pbuf,
+    col_pdf.download_button(
+        "⬇️ Crea PDF",
+        data=pbuf,
         file_name="prodotti_selezionati.pdf",
         mime="application/pdf",
-        help="Crea PDF"
     )
 
-    # Tabella paniere
+    # Editor paniere
+    default_sel_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
     basket_display = with_fw_prefix(basket)[DISPLAY_COLUMNS].copy()
     basket_display.insert(0, "rm", default_sel_b)
 
@@ -367,7 +363,7 @@ with tab_basket:
         key="basket_editor",
     )
 
-    # Azione rimozione selezionati
+    # Azione rimozione
     if remove_btn:
         to_remove = set(edited_basket.loc[edited_basket["rm"].fillna(False), "codice"].tolist())
         if to_remove:
