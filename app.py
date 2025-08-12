@@ -68,7 +68,8 @@ USERS = {
     "peppi":     {"name": "Peppi",                "password": ">Peppi25"},
     "luca":      {"name": "Luca",                 "password": ">Luca33"},
     "david":     {"name": "David",                "password": ">Dav!d"},
-    "claudio":   {"name": "Claudio",              "password": "Claud!o"},
+    "claudio":   {"name": "Claudio",              "password": "Claud!O"},
+    "elsa":   {"name": "Claudio",              "password": "ElsA!"},
 }
 
 st.session_state.setdefault("authenticated", False)
@@ -519,6 +520,7 @@ if not st.session_state.authenticated:
     login_view()
 else:
     run_app()
+
 
 
 
