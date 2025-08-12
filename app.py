@@ -181,32 +181,47 @@ with h2: st.image("https://res.cloudinary.com/dct4tiqsl/image/upload/v1754315051
 with st.sidebar:
     st.header("🔎 Ricerca")
     with st.form("search_form", clear_on_submit=False):
-        q = st.text_input("Cerca su codice, prodotto, categoria, tipologia, provenienza",
-                          placeholder="Es. 'riesling alto adige 0,75'")
+        q = st.text_input(
+            "Cerca su codice, prodotto, categoria, tipologia, provenienza",
+            placeholder="Es. 'riesling alto adige 0,75'"
+        )
 
-        # Checkbox + nota separata a capo e più piccola
-        st.checkbox("Includi FINE WINES", value=st.session_state.include_fw, key="include_fw")
-        st.caption("⏳ disponibilità salvo conferma e consegna minimo 3 settimane.")
+        # Checkbox Fine Wines con testo su due righe dentro il box arancione
+        st.checkbox(
+            "Includi FINE WINES\n⏳ disponibilità salvo conferma e consegna minimo 3 settimane.",
+            value=st.session_state.include_fw,
+            key="include_fw",
+        )
 
         # Dataset parziale per bound dinamici
         df_all = df_base.copy()
         if st.session_state.include_fw:
             try:
-                df_fw = load_data(FW_CSV_URL); df_fw["is_fw"] = True
+                df_fw = load_data(FW_CSV_URL)
+                df_fw["is_fw"] = True
                 df_all = pd.concat([df_all, df_fw], ignore_index=True)
             except requests.exceptions.HTTPError as e:
-                st.warning("⚠️ Impossibile caricare il foglio Fine Wines."); st.caption(f"Dettaglio: {e}")
+                st.warning("⚠️ Impossibile caricare il foglio Fine Wines.")
+                st.caption(f"Dettaglio: {e}")
 
         tokens = tokenize_query(q) if q else []
-        mask_text = (df_all.apply(lambda r: row_matches(r, tokens, SEARCH_FIELDS), axis=1)
-                     if tokens else pd.Series(True, index=df_all.index))
+        mask_text = (
+            df_all.apply(lambda r: row_matches(r, tokens, SEARCH_FIELDS), axis=1)
+            if tokens else pd.Series(True, index=df_all.index)
+        )
         df_after_text = df_all.loc[mask_text]
+
         dyn_min, dyn_max = adaptive_price_bounds(df_after_text)
 
-        # Filtro prezzi: Min (riga 1) -> Max (riga 2) -> Slider (riga 3)
-        min_price_input = st.number_input("Min", min_value=0.0, value=float(dyn_min), step=0.1, format="%.2f")
-        max_price_input = st.number_input("Max", min_value=0.01, value=float(dyn_max), step=0.1, format="%.2f")
-
+        # Min riga 1
+        min_price_input = st.number_input(
+            "Min", min_value=0.0, value=float(dyn_min), step=0.1, format="%.2f"
+        )
+        # Max riga 2
+        max_price_input = st.number_input(
+            "Max", min_value=0.01, value=float(dyn_max), step=0.1, format="%.2f"
+        )
+        # Slider riga 3
         max_for_slider = max(min_price_input, max_price_input)
         price_range = st.slider(
             "Range",
@@ -218,6 +233,7 @@ with st.sidebar:
         )
 
         submitted = st.form_submit_button("Cerca")
+
 
 # Filtri applicati globalmente
 min_price = min(price_range[0], price_range[1])
@@ -342,3 +358,4 @@ with tab_basket:
             st.success("Rimossi articoli selezionati."); st.rerun()
         else:
             st.info("Seleziona almeno un articolo da rimuovere.")
+
