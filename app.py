@@ -295,6 +295,36 @@ with tab_basket:
     default_sel_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
     basket_display = with_fw_prefix(basket)[DISPLAY_COLUMNS].copy()
     basket_display.insert(0, "rm", default_sel_b)
-    edited_basket = st.data_editor(basket_display, hide_index=True, use_container_width=True, num_rows="fixed",
+   edited_basket = st.data_editor(
+        basket_display,
+        hide_index=True,
+        use_container_width=True,
+        num_rows="fixed",
         column_config={
-            "rm": st.column_config.CheckboxColumn(label="", width=38
+            "rm": st.column_config.CheckboxColumn(label="", width=38),
+            "codice": st.column_config.TextColumn(width=50),
+            "prodotto": st.column_config.TextColumn(width=380),
+            "prezzo": st.column_config.NumberColumn(format="€ %.2f", width=75),
+            "categoria": st.column_config.TextColumn(width=160),
+            "tipologia": st.column_config.TextColumn(width=160),
+            "provenienza": st.column_config.TextColumn(width=160),
+        },
+        disabled=["codice", "prodotto", "prezzo", "categoria", "tipologia", "provenienza"],
+        key="basket_editor"
+    )
+
+    # Rimozione articoli selezionati
+    if remove_btn:
+        selected_mask_b = edited_basket["rm"].fillna(False)
+        selected_codes_b = set(edited_basket.loc[selected_mask_b, "codice"].tolist())
+        if selected_codes_b:
+            st.session_state.basket = st.session_state.basket[
+                ~st.session_state.basket["codice"].isin(selected_codes_b)
+            ].reset_index(drop=True)
+            st.session_state.basket_select_all_toggle = False
+            st.session_state.reset_basket_selection = True
+            st.session_state.flash = {"type": "success", "msg": "Rimossi articoli selezionati.", "shown": False}
+            st.session_state.prefer_basket = True
+            st.rerun()
+        else:
+            st.info("Seleziona almeno un articolo dal paniere.")
