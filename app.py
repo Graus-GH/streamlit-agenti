@@ -1,42 +1,25 @@
-import streamlit as st
-import streamlit_authenticator as stauth
-from streamlit_authenticator.utilities.hasher import Hasher  # ⟵ import corretto
+# --- ONE-SHOT: genera hash delle password, poi rimuovi ---
+SHOW_HASHER = False
 
-# --- Utenti ammessi (solo per generare gli hash la prima volta) ---
-NOMI = ["Mario Rossi", "Anna Verdi"]
-UTENTI = ["mario.rossi", "anna.verdi"]
-PASSWORD_PIANO = ["password1", "password2"]  # usa solo per generare hash, poi rimuovi
+if SHOW_HASHER:
+    from streamlit_authenticator.utilities.hasher import Hasher
 
-# Genera gli hash (sostituisci poi PASSWORD_PIANO con gli hash qui sotto)
-HASHED = Hasher.hash_list(PASSWORD_PIANO)
-
-# Costruisci il dizionario credenziali richiesto dalla libreria
-credentials = {
-    "usernames": {
-        u: {"name": n, "password": h, "email": f"{u}@graus.bz.it"}
-        for n, u, h in zip(NOMI, UTENTI, HASHED)
+    plain_passwords = {
+        "merch": "Sterch",
+        "fdefazio": "ciccio",
+        "kristin": ">Smarter!",
+        "silvia": ">Smarter!",
+        "angelo": ">#NumeroUno",
+        "peppi": ">Peppi25",
+        "luca": ">Luca33",
+        "david": ">Dav!d",
     }
-}
 
-# Inizializza autenticatore (cookie per ri-autenticazione)
-authenticator = stauth.Authenticate(
-    credentials,
-    cookie_name="graus_auth",
-    key="cambia_questa_chiave_random",
-    cookie_expiry_days=1
-)
+    for user, pwd in plain_passwords.items():
+        print(user, Hasher.hash(pwd))
+    import streamlit as st
+    st.stop()  # Evita che l'app prosegua mentre copi gli hash
 
-# Mostra il form di login e gestisci lo stato
-authenticator.login()
-if st.session_state.get("authentication_status"):
-    authenticator.logout("Logout", "sidebar")
-    st.caption(f"✅ Utente: {st.session_state.get('name')} ({st.session_state.get('username')})")
-else:
-    if st.session_state.get("authentication_status") is False:
-        st.error("Credenziali errate")
-    else:
-        st.info("Effettua il login per continuare.")
-    st.stop()  # blocca il resto dell'app finché non si logga
 
 
 import io
@@ -485,5 +468,6 @@ if st.session_state.active_tab == "Prodotti":
             st.rerun()
         else:
             st.info("Seleziona almeno un articolo dal paniere.")
+
 
 
