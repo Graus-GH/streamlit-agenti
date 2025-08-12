@@ -1,6 +1,17 @@
+import streamlit as st
+import streamlit_authenticator as stauth
 
+if st.sidebar.checkbox("Admin: genera hash (temporaneo)"):
+    pw = st.sidebar.text_input("Password in chiaro", type="password")
+    if st.sidebar.button("Genera hash"):
+        if pw:
+            h = stauth.Hasher([pw]).generate()[0]
+            st.sidebar.success("Hash generato. Copialo nei Secrets e rimuovi questo blocco.")
+            st.sidebar.code(h)
+        else:
+            st.sidebar.warning("Inserisci una password.")
 
-
+# =========================
 
 import io
 import re
@@ -448,6 +459,7 @@ if st.session_state.active_tab == "Prodotti":
             st.rerun()
         else:
             st.info("Seleziona almeno un articolo dal paniere.")
+
 
 
 
