@@ -75,25 +75,47 @@ st.session_state.setdefault("username", None)
 st.session_state.setdefault("display_name", None)
 
 def login_view():
+    def norm(s: str) -> str:
+        # normalizza spazi (anche NBSP), toglie spazi ai lati
+        return (s or "").replace("\u00A0", " ").strip()
+
     st.title("🔐 Accesso richiesto")
     st.markdown('<div class="login-card">', unsafe_allow_html=True)
     with st.form("login_form", clear_on_submit=False):
-        u = st.text_input("Username", placeholder="Es. merch")
-        p = st.text_input("Password", type="password")
+        u_in = st.text_input("Username (es. merch) o Nome", placeholder="merch / Kristin / ...")
+        p_in = st.text_input("Password", type="password")
         ok = st.form_submit_button("Accedi")
+
         if ok:
-            key = (u or "").strip()
-            rec = USERS.get(key)
-            if rec and p == rec["password"]:
+            u_key = norm(u_in).lower()
+            pwd = norm(p_in)
+
+            # 1) prova con username (case-insensitive)
+            rec = USERS.get(u_key)
+
+            # 2) in fallback, consenti login col Nome visualizzato
+            if not rec:
+                for uname, info in USERS.items():
+                    if norm(info["name"]).lower() == u_key:
+                        rec = info
+                        u_key = uname  # salva lo username reale
+                        break
+
+            if rec and pwd == rec["password"]:
                 st.session_state.authenticated = True
-                st.session_state.username = key
+                st.session_state.username = u_key
                 st.session_state.display_name = rec["name"]
                 st.success(f"Benvenuto, {rec['name']}!")
                 st.rerun()
             else:
-                st.error("Credenziali non valide.")
+                st.error("Credenziali non valide. Controlla maiuscole/spazi.")
     st.markdown("</div>", unsafe_allow_html=True)
-    st.info("Suggerimento: usa uno degli utenti forniti (es. **merch / Sterch**).")
+
+    # promemoria utenti validi (per evitare confusione)
+    with st.expander("Vedi utenti disponibili"):
+        st.write(", ".join(USERS.keys()))
+        st.caption("Esempio rapido: **merch / Sterch**")
+
 
 # =========================
 # CONFIG – ORIGINE DATI
@@ -496,3 +518,4 @@ if not st.session_state.authenticated:
     login_view()
 else:
     run_app()
+
