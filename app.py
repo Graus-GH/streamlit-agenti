@@ -18,29 +18,45 @@ st.set_page_config(page_title="✨GRAUS Proposta Clienti", layout="wide")
 # =========================
 st.markdown("""
 <style>
-section[data-testid="stSidebar"] { width: 360px !important; min-width: 360px !important; }
+/* ... (tuo CSS esistente) ... */
 
-/* Checkbox a tutta larghezza con nota a capo */
-div[data-testid="stForm"] div[data-testid="stCheckbox"] > label {
-  width: 100%; display: flex; align-items: start; gap: 6px;
-  padding: 6px 10px; border-radius: 8px; border: 1px solid transparent;
-  box-sizing: border-box; white-space: pre-line;
+/* "Tabs" controller orizzontale (radio) – contenitore con bordo */
+div[role="radiogroup"]{
+  display: inline-flex !important;
+  gap: 8px !important;
+  padding: 6px;
+  border: 1px solid #cbd5e1;          /* grigio chiaro */
+  border-radius: 12px;
+  background: #ffffff;
+  width: fit-content;                  /* evita di occupare tutta la riga */
+  margin: 6px 0 12px 0;
 }
-div[data-testid="stForm"] div[data-testid="stCheckbox"] > label:has(input:checked) {
-  background: #ffedd5; color: #7c2d12; border-color: #fdba74;
+
+/* Ogni "tab" come pill */
+div[role="radiogroup"] label{
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background-color .15s ease, border-color .15s ease;
 }
-div[data-testid="stForm"] div[data-testid="stCheckbox"] input[type="checkbox"] { transform: scale(1.1); }
 
-/* Form compatto */
-section[data-testid="stSidebar"] div[data-testid="stForm"] label p { margin-bottom: 2px !important; }
-section[data-testid="stSidebar"] div[data-testid="stNumberInputContainer"] input,
-section[data-testid="stSidebar"] input[type="text"] { height: 34px; }
+/* Evidenzia TAB attivo (blu leggero) */
+div[role="radiogroup"] label:has([role="radio"][aria-checked="true"]){
+  background: #eaf2ff;                 /* blu molto leggero */
+  border-color: #93c5fd;               /* bordo blu tenue */
+}
 
-/* Pulsanti compatti */
-.stButton > button, .stDownloadButton > button { padding: 6px 10px; line-height: 1; }
+/* Fallback: nel caso la struttura DOM vari */
+div[role="radio"][aria-checked="true"]{
+  background: #eaf2ff;
+  border: 1px solid #93c5fd;
+  border-radius: 10px;
+}
 
-/* "Tabs" controller orizzontale (radio) */
-div[role="radiogroup"] { gap: 8px !important; }
+/* Hover gradevole */
+div[role="radiogroup"] label:hover{ background: #f1f5f9; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -447,6 +463,7 @@ if st.session_state.active_tab == "Prodotti":
             st.rerun()
         else:
             st.info("Seleziona almeno un articolo dal paniere.")
+
 
 
 
