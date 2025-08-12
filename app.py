@@ -11,7 +11,7 @@ from fpdf import FPDF
 st.set_page_config(page_title="✨GRAUS Proposta Clienti", layout="wide")
 
 # =========================
-# CSS – sidebar, checkbox arancione, pulsanti compatti
+# CSS – sidebar più larga, checkbox arancione, pulsanti compatti
 # =========================
 st.markdown("""
 <style>
@@ -36,7 +36,7 @@ section[data-testid="stSidebar"] input[type="text"] { height: 34px; }
 /* Pulsanti compatti */
 .stButton > button, .stDownloadButton > button { padding: 6px 10px; line-height: 1; }
 
-/* "Tabs" controller orizzontale (radio) */
+/* Radio orizzontale (controller schede) */
 div[role="radiogroup"] { gap: 8px !important; }
 </style>
 """, unsafe_allow_html=True)
@@ -210,9 +210,11 @@ for k in [
     "reset_basket_selection",
     "flash",
     "include_fw",
-    "active_tab",   # "Ricerca" | "Prodotti"
 ]:
-    st.session_state.setdefault(k, False if k != "active_tab" else "Ricerca")
+    st.session_state.setdefault(k, False)
+
+# controller schede: valori stabili "search" | "basket"
+st.session_state.setdefault("tab_choice", "search")
 
 # =========================
 # DATA
@@ -282,7 +284,7 @@ with st.sidebar:
 
         submitted_sidebar = st.form_submit_button("Cerca")
         if submitted_sidebar:
-            st.session_state.active_tab = "Ricerca"
+            st.session_state.tab_choice = "search"  # vai su Ricerca
 
 # Filtri applicati
 min_price = min(price_range[0], price_range[1])
@@ -291,22 +293,25 @@ mask_price = df_after_text["prezzo"].fillna(0.0).between(min_price, max_price)
 df_res = df_after_text.loc[mask_price].reset_index(drop=True)
 
 # =========================
-# "TABS" CONTROLLER – ordine fisso
+# CONTROLLER SCHEDE (radio con opzioni stabili)
 # =========================
 basket_len = len(st.session_state.basket)
-labels = ["Ricerca", f"Prodotti selezionati ({basket_len})"]
-index = 0 if st.session_state.active_tab == "Ricerca" else 1
-choice = st.radio("",
-                  options=labels,
-                  index=index,
-                  horizontal=True,
-                  label_visibility="collapsed")
-st.session_state.active_tab = "Ricerca" if choice == labels[0] else "Prodotti"
+def tab_label(opt: str) -> str:
+    return "Ricerca" if opt == "search" else f"Prodotti selezionati ({basket_len})"
+
+st.radio(
+    label="",
+    options=["search", "basket"],
+    format_func=tab_label,
+    horizontal=True,
+    label_visibility="collapsed",
+    key="tab_choice",  # legato direttamente alla sessione: niente index
+)
 
 # =========================
-# RICERCA (se attiva)
+# RICERCA
 # =========================
-if st.session_state.active_tab == "Ricerca":
+if st.session_state.tab_choice == "search":
     st.caption(f"Risultati: {len(df_res)}")
 
     c_toggle, _ = st.columns([3, 7])
@@ -362,17 +367,17 @@ if st.session_state.active_tab == "Ricerca":
 
             st.session_state.res_select_all_toggle = False
             st.session_state.reset_res_selection = True
-            st.session_state.flash = {"type": "success", "msg": f"Aggiunti {len(df_to_add)} articoli al paniere.", "shown": False}
+            st.session_state.flash = {"type": "success", "msg": f"Aggiunti {len[df_to_add]} articoli al paniere.", "shown": False}
 
-            st.session_state.active_tab = "Prodotti"
+            st.session_state.tab_choice = "basket"  # vai al paniere
             st.rerun()
         else:
             st.info("Seleziona almeno un articolo dalla griglia.")
 
 # =========================
-# PANIERE (se attivo)
+# PANIERE
 # =========================
-if st.session_state.active_tab == "Prodotti":
+if st.session_state.tab_choice == "basket":
     basket = st.session_state.basket.copy()
 
     # Pulsanti in orizzontale e compatti
@@ -440,7 +445,7 @@ if st.session_state.active_tab == "Prodotti":
             st.session_state.reset_basket_selection = True
             st.session_state.flash = {"type": "success", "msg": "Rimossi articoli selezionati.", "shown": False}
 
-            st.session_state.active_tab = "Prodotti"
+            st.session_state.tab_choice = "basket"  # resta sul paniere
             st.rerun()
         else:
             st.info("Seleziona almeno un articolo dal paniere.")
