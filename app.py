@@ -1,3 +1,32 @@
+import streamlit as st
+import streamlit_authenticator as stauth
+
+# --- Configurazione utenti ammessi ---
+usernames = ["Merch", "Sterch"]
+names = ["Mario Rossi", "Anna Verdi"]
+passwords = ["password123", "altraPassword"]
+
+hashed_passwords = stauth.Hasher(passwords).generate()
+
+authenticator = stauth.Authenticate(
+    names,
+    usernames,
+    hashed_passwords,
+    "cookie_nome",
+    "cookie_chiave",
+    cookie_expiry_days=1
+)
+
+name, authentication_status, username = authenticator.login("Login", "main")
+
+if authentication_status is False:
+    st.error("❌ Username o password errati")
+elif authentication_status is None:
+    st.warning("Inserisci username e password")
+else:
+    st.success(f"✅ Benvenuto {name}")
+    authenticator.logout("Logout", "sidebar")
+
 import io
 import re
 from typing import List, Tuple
@@ -444,3 +473,4 @@ if st.session_state.active_tab == "Prodotti":
             st.rerun()
         else:
             st.info("Seleziona almeno un articolo dal paniere.")
+
