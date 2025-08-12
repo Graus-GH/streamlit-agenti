@@ -306,37 +306,34 @@ with tab_search:
 with tab_basket:
     basket = st.session_state.basket.copy()
 
-    # --- CSS per pulsanti in riga, compatti e senza sfondo blu ---
+    # --- CSS pulsanti compatti in riga ---
     st.markdown("""
     <style>
-    /* riduco gap orizzontale tra colonne della prima riga pulsanti */
     div[data-testid="stHorizontalBlock"] { gap: 6px; }
-    /* pulsanti più compatti */
-    .stButton > button, .stDownloadButton > button {
-        padding: 6px 10px;
-        line-height: 1;
-    }
+    .stButton > button, .stDownloadButton > button { padding: 6px 10px; line-height: 1; }
     </style>
     """, unsafe_allow_html=True)
 
-    # --- RIGA PULSANTI ORIZZONTALE ---
+    # --- RIGA PULSANTI ---
     col_sel, col_rm, col_xls, col_pdf, _spacer = st.columns([1, 1, 1, 1, 10])
 
-    # 1) Seleziona/Deseleziona tutto il paniere
+    # 1) Seleziona/Deseleziona tutto (senza st.rerun)
     all_on_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
     if col_sel.button("Deseleziona tutto il paniere" if all_on_b else "Seleziona tutto il paniere"):
         st.session_state.basket_select_all_toggle = not all_on_b
         st.session_state.reset_basket_selection = not st.session_state.basket_select_all_toggle
-        st.rerun()
+        # niente st.rerun() -> resti nel tab corrente
 
-    # 2) Rimuovi selezionati (senza sfondo blu)
+    # 2) Rimuovi selezionati (senza sfondo blu e senza st.rerun)
     remove_btn = col_rm.button("🗑️ Rimuovi selezionati")
 
-    # 3) Esporta Excel
+    # Dati per export
     basket_sorted = st.session_state.basket.sort_values(
         ["categoria", "tipologia", "provenienza", "prodotto"], kind="stable"
     ).reset_index(drop=True)
     export_df = with_fw_prefix(basket_sorted)[DISPLAY_COLUMNS].copy()
+
+    # 3) Esporta Excel
     xbuf = make_excel(export_df)
     col_xls.download_button(
         "⬇️ Esporta Excel",
@@ -377,7 +374,7 @@ with tab_basket:
         key="basket_editor",
     )
 
-    # --- RIMOZIONE ARTICOLI ---
+    # --- RIMOZIONE ARTICOLI (senza st.rerun) ---
     if remove_btn:
         to_remove = set(edited_basket.loc[edited_basket["rm"].fillna(False), "codice"].tolist())
         if to_remove:
@@ -387,6 +384,6 @@ with tab_basket:
             st.session_state.basket_select_all_toggle = False
             st.session_state.reset_basket_selection = True
             st.success("Rimossi articoli selezionati.")
-            st.rerun()
+            # niente st.rerun() -> il tab resta “Prodotti selezionati”
         else:
             st.info("Seleziona almeno un articolo da rimuovere.")
