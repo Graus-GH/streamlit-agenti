@@ -1,13 +1,6 @@
-import io
-import re
-from typing import List, Tuple
-
-import numpy as np
-import pandas as pd
-import requests
 import streamlit as st
-from fpdf import FPDF
 import streamlit_authenticator as stauth
+from collections.abc import Mapping
 
 st.set_page_config(page_title="✨GRAUS Proposta Clienti", layout="wide")
 
@@ -16,8 +9,16 @@ if "auth" not in st.secrets:
     st.error("Config di autenticazione mancante nei Secrets: sezione [auth].")
     st.stop()
 
-cfg = st.secrets["auth"]
-credentials = cfg["credentials"]   # contiene "usernames": {...}
+# Converti TUTTA la struttura st.secrets["auth"] in dict "mutabile"
+def to_plain_dict(obj):
+    if isinstance(obj, Mapping):
+        return {k: to_plain_dict(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [to_plain_dict(v) for v in obj]
+    return obj
+
+cfg = to_plain_dict(st.secrets["auth"])   # <-- ora è un dict vero, non read-only
+credentials = cfg["credentials"]
 cookie      = cfg["cookie"]
 
 authenticator = stauth.Authenticate(
@@ -40,6 +41,7 @@ else:
     authenticator.logout("Logout", "sidebar")
     st.sidebar.write(f"👤 {name}")
 # --- /AUTH ---
+
 
 
 
@@ -477,6 +479,7 @@ if st.session_state.active_tab == "Prodotti":
             st.rerun()
         else:
             st.info("Seleziona almeno un articolo dal paniere.")
+
 
 
 
