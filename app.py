@@ -310,12 +310,24 @@ df_res = df_after_text.loc[mask_price].reset_index(drop=True)
 basket_len = len(st.session_state.basket)
 labels = ["Ricerca", f"Prodotti selezionati ({basket_len})"]
 index = 0 if st.session_state.active_tab == "Ricerca" else 1
-choice = st.radio("",
-                  options=labels,
-                  index=index,
-                  horizontal=True,
-                  label_visibility="collapsed")
+
+# Apri wrapper
+st.markdown('<div id="seg-tabs">', unsafe_allow_html=True)
+
+choice = st.radio(
+    "",
+    options=labels,
+    index=index,
+    horizontal=True,
+    label_visibility="collapsed",
+    key="seg_radio"  # chiave dedicata
+)
+
+# Chiudi wrapper
+st.markdown('</div>', unsafe_allow_html=True)
+
 st.session_state.active_tab = "Ricerca" if choice == labels[0] else "Prodotti"
+
 
 # =========================
 # RICERCA (se attiva)
@@ -458,6 +470,7 @@ if st.session_state.active_tab == "Prodotti":
             st.rerun()
         else:
             st.info("Seleziona almeno un articolo dal paniere.")
+
 
 
 
