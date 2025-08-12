@@ -1,10 +1,20 @@
+import io
+import re
+from typing import List, Tuple
+
+import numpy as np
+import pandas as pd
+import requests
 import streamlit as st
+from fpdf import FPDF
 import streamlit_authenticator as stauth
 from collections.abc import Mapping
 
 st.set_page_config(page_title="✨GRAUS Proposta Clienti", layout="wide")
 
-# --- AUTH (plaintext in secrets + auto_hash, compat nuova API) ---
+# =========================
+# AUTH – plaintext in secrets + auto_hash (compat nuove/vecchie API)
+# =========================
 if "auth" not in st.secrets:
     st.error("Config di autenticazione mancante nei Secrets: sezione [auth].")
     st.stop()
@@ -17,7 +27,7 @@ def to_plain_dict(obj):
     return obj
 
 cfg = to_plain_dict(st.secrets["auth"])  # st.secrets -> dict mutabile
-credentials = cfg["credentials"]
+credentials = cfg["credentials"]         # contiene "usernames": {...}
 cookie      = cfg["cookie"]
 
 authenticator = stauth.Authenticate(
@@ -25,15 +35,17 @@ authenticator = stauth.Authenticate(
     cookie["name"],
     cookie["key"],
     cookie["expiry_days"],
-    auto_hash=True,  # password in chiaro nei Secrets -> hash automatico
+    auto_hash=True,   # password in chiaro nei Secrets -> hash automatico
 )
 
-# NIENTE assegnazione: la nuova API aggiorna session_state
-authenticator.login(location="main", key="auth_login")
-
-auth_status = st.session_state.get("authentication_status")
-name       = st.session_state.get("name")
-username   = st.session_state.get("username")
+# Login: prova API nuova (no return), fallback API vecchia (ritorna tupla)
+try:
+    authenticator.login(location="main", key="auth_login")
+    auth_status = st.session_state.get("authentication_status")
+    name       = st.session_state.get("name")
+    username   = st.session_state.get("username")
+except TypeError:
+    name, auth_status, username = authenticator.login("Login", "main", key="auth_login")
 
 if auth_status is False:
     st.error("Credenziali non valide.")
@@ -42,15 +54,11 @@ elif auth_status is None:
     st.info("Inserisci username e password per accedere.")
     st.stop()
 else:
-    # Logout (firma nuova; fallback alla vecchia se serve)
     try:
         authenticator.logout(button_name="Logout", location="sidebar", key="auth_logout")
     except TypeError:
         authenticator.logout("Logout", "sidebar", key="auth_logout")
     st.sidebar.write(f"👤 {name}")
-# --- /AUTH ---
-
-
 
 
 
@@ -489,6 +497,7 @@ if st.session_state.active_tab == "Prodotti":
             st.rerun()
         else:
             st.info("Seleziona almeno un articolo dal paniere.")
+
 
 
 
