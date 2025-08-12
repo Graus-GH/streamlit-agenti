@@ -408,84 +408,73 @@ def run_app():
     choice = st.radio("", options=labels, index=index, horizontal=True, label_visibility="collapsed")
     st.session_state.active_tab = "Ricerca" if choice == labels[0] else "Prodotti"
 
-# RICERCA
-if st.session_state.active_tab == "Ricerca":
-    st.caption(f"Risultati: {len(df_res)}")
+    # RICERCA
+    if st.session_state.active_tab == "Ricerca":
+        st.caption(f"Risultati: {len(df_res)}")
 
-    # Pulsanti affiancati: Seleziona/Deseleziona + Aggiungi (pulsante largo)
-    col_sel, col_add, _spacer = st.columns([1, 3, 8])
+        # Pulsanti affiancati (come in Prodotti): Seleziona/Deseleziona + Aggiungi
+        col_sel, col_add, _spacer = st.columns([1, 1, 10])
 
-    all_on = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
-    with col_sel:
-        toggle_clicked = st.button(
-            "Deseleziona tutti i risultati" if all_on else "Seleziona tutti i risultati",
-            key="res_toggle_btn"
+        all_on = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
+        with col_sel:
+            if st.button("Deseleziona tutti i risultati" if all_on else "Seleziona tutti i risultati", key="res_toggle_btn"):
+                st.session_state.res_select_all_toggle = not all_on
+                st.session_state.reset_res_selection = not st.session_state.res_select_all_toggle
+                st.rerun()
+
+        add_btn = col_add.button("➕ Aggiungi selezionati al paniere", type="primary", key="add_to_basket_btn")
+
+        # Flash message (mostrata sotto i pulsanti)
+        if st.session_state.flash:
+            f = st.session_state.flash
+            {"success": st.success, "info": st.info, "warning": st.warning, "error": st.error}.get(
+                f.get("type", "success"), st.success
+            )(f.get("msg", ""))
+            if not f.get("shown", False):
+                st.session_state.flash["shown"] = True
+            else:
+                st.session_state.flash = None
+
+        # Griglia risultati
+        default_sel = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
+        df_res_display = with_fw_prefix(df_res)[DISPLAY_COLUMNS].copy()
+        df_res_display.insert(0, "sel", default_sel)
+
+        edited_res = st.data_editor(
+            df_res_display,
+            hide_index=True,
+            use_container_width=True,
+            num_rows="fixed",
+            column_config={
+                "sel": st.column_config.CheckboxColumn(label="", width=38, help="Seleziona riga"),
+                "codice": st.column_config.TextColumn(width=50),
+                "prodotto": st.column_config.TextColumn(width=380),
+                "prezzo": st.column_config.NumberColumn(format="€ %.2f", width=75),
+                "categoria": st.column_config.TextColumn(width=160),
+                "tipologia": st.column_config.TextColumn(width=160),
+                "provenienza": st.column_config.TextColumn(width=160),
+            },
+            disabled=["codice", "prodotto", "prezzo", "categoria", "tipologia", "provenienza"],
+            key="res_editor",
         )
 
-    add_btn = col_add.button(
-        "➕ Aggiungi selezionati al paniere",
-        type="primary",
-        key="add_to_basket_btn",
-        use_container_width=True  # 👈 più largo
-    )
+        if add_btn:
+            selected_mask = edited_res["sel"].fillna(False)
+            selected_codes = set(edited_res.loc[selected_mask, "codice"].tolist())
+            if selected_codes:
+                df_to_add = df_res[df_res["codice"].isin(selected_codes)]
+                combined = pd.concat([st.session_state.basket, df_to_add], ignore_index=True)
+                combined = combined.drop_duplicates(subset=["codice"]).reset_index(drop=True)
+                st.session_state.basket = combined
 
-    if toggle_clicked:
-        st.session_state.res_select_all_toggle = not all_on
-        st.session_state.reset_res_selection = not st.session_state.res_select_all_toggle
-        st.rerun()
+                st.session_state.res_select_all_toggle = False
+                st.session_state.reset_res_selection = True
+                st.session_state.flash = {"type": "success", "msg": f"Aggiunti {len(df_to_add)} articoli al paniere.", "shown": False}
 
-    # Flash message (fuori dai 'with', niente rientri extra)
-    if st.session_state.flash:
-        f = st.session_state.flash
-        {"success": st.success, "info": st.info, "warning": st.warning, "error": st.error}.get(
-            f.get("type", "success"), st.success
-        )(f.get("msg", ""))
-        if not f.get("shown", False):
-            st.session_state.flash["shown"] = True
-        else:
-            st.session_state.flash = None
-
-    # Griglia risultati
-    default_sel = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
-    df_res_display = with_fw_prefix(df_res)[DISPLAY_COLUMNS].copy()
-    df_res_display.insert(0, "sel", default_sel)
-
-    edited_res = st.data_editor(
-        df_res_display,
-        hide_index=True,
-        use_container_width=True,
-        num_rows="fixed",
-        column_config={
-            "sel": st.column_config.CheckboxColumn(label="", width=38, help="Seleziona riga"),
-            "codice": st.column_config.TextColumn(width=50),
-            "prodotto": st.column_config.TextColumn(width=380),
-            "prezzo": st.column_config.NumberColumn(format="€ %.2f", width=75),
-            "categoria": st.column_config.TextColumn(width=160),
-            "tipologia": st.column_config.TextColumn(width=160),
-            "provenienza": st.column_config.TextColumn(width=160),
-        },
-        disabled=["codice", "prodotto", "prezzo", "categoria", "tipologia", "provenienza"],
-        key="res_editor",
-    )
-
-    if add_btn:
-        selected_mask = edited_res["sel"].fillna(False)
-        selected_codes = set(edited_res.loc[selected_mask, "codice"].tolist())
-        if selected_codes:
-            df_to_add = df_res[df_res["codice"].isin(selected_codes)]
-            combined = pd.concat([st.session_state.basket, df_to_add], ignore_index=True)
-            combined = combined.drop_duplicates(subset=["codice"]).reset_index(drop=True)
-            st.session_state.basket = combined
-
-            st.session_state.res_select_all_toggle = False
-            st.session_state.reset_res_selection = True
-            st.session_state.flash = {"type": "success", "msg": f"Aggiunti {len(df_to_add)} articoli al paniere.", "shown": False}
-
-            st.session_state.active_tab = "Prodotti"
-            st.rerun()
-        else:
-            st.info("Seleziona almeno un articolo dalla griglia.")
-
+                st.session_state.active_tab = "Prodotti"
+                st.rerun()
+            else:
+                st.info("Seleziona almeno un articolo dalla griglia.")
 
     # PANIERE
     if st.session_state.active_tab == "Prodotti":
@@ -578,6 +567,3 @@ if not st.session_state.authenticated:
     login_view()
 else:
     run_app()
-
-
-
