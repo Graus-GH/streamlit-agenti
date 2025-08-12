@@ -1,15 +1,15 @@
 import streamlit as st
 import streamlit_authenticator as stauth
 from collections.abc import Mapping
+import inspect
 
 st.set_page_config(page_title="✨GRAUS Proposta Clienti", layout="wide")
 
-# --- AUTH (plaintext in secrets + auto_hash) ---
+# --- AUTH (plaintext in secrets + auto_hash + compat) ---
 if "auth" not in st.secrets:
     st.error("Config di autenticazione mancante nei Secrets: sezione [auth].")
     st.stop()
 
-# Converti TUTTA la struttura st.secrets["auth"] in dict "mutabile"
 def to_plain_dict(obj):
     if isinstance(obj, Mapping):
         return {k: to_plain_dict(v) for k, v in obj.items()}
@@ -17,7 +17,7 @@ def to_plain_dict(obj):
         return [to_plain_dict(v) for v in obj]
     return obj
 
-cfg = to_plain_dict(st.secrets["auth"])   # <-- ora è un dict vero, non read-only
+cfg = to_plain_dict(st.secrets["auth"])  # dict mutabile (st.secrets è read-only)
 credentials = cfg["credentials"]
 cookie      = cfg["cookie"]
 
@@ -26,14 +26,23 @@ authenticator = stauth.Authenticate(
     cookie["name"],
     cookie["key"],
     cookie["expiry_days"],
-    auto_hash=True,   # accetta password in chiaro nei Secrets e le hasha al volo
+    auto_hash=True,   # password in chiaro nei secrets -> hash automatico
 )
 
-name, auth_status, username = authenticator.login(
-    location="main",
-    fields={"Form name": "Login"}  # opzionale: titolo del form
-)
+# --- Login compatibile con versioni nuove/vecchie ---
+login_params = inspect.signature(authenticator.login).parameters
+logout_params = inspect.signature(authenticator.logout).parameters
 
+if "location" in login_params:  # nuove versioni
+    name, auth_status, username = authenticator.login(
+        location="main",
+        key="auth_login",
+        # fields={"Form name": "Login"}  # opzionale
+    )
+else:  # versioni precedenti
+    name, auth_status, username = authenticator.login(
+        "Login", "main", key="auth_login"
+    )
 
 if auth_status is False:
     st.error("Credenziali non valide.")
@@ -42,9 +51,13 @@ elif auth_status is None:
     st.info("Inserisci username e password per accedere.")
     st.stop()
 else:
-    authenticator.logout(button_name="Logout", location="sidebar")
+    if "location" in logout_params:  # nuove versioni
+        authenticator.logout(button_name="Logout", location="sidebar", key="auth_logout")
+    else:  # vecchie versioni
+        authenticator.logout("Logout", "sidebar", key="auth_logout")
     st.sidebar.write(f"👤 {name}")
 # --- /AUTH ---
+
 
 
 
@@ -483,6 +496,7 @@ if st.session_state.active_tab == "Prodotti":
             st.rerun()
         else:
             st.info("Seleziona almeno un articolo dal paniere.")
+
 
 
 
