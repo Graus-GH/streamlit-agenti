@@ -1,49 +1,28 @@
-import streamlit as st
-import streamlit_authenticator as stauth
-from collections.abc import Mapping
+# --- AUTH (compat nuova/vecchia API) ---
 import inspect
 
-st.set_page_config(page_title="✨GRAUS Proposta Clienti", layout="wide")
-
-# --- AUTH (plaintext in secrets + auto_hash + compat) ---
-if "auth" not in st.secrets:
-    st.error("Config di autenticazione mancante nei Secrets: sezione [auth].")
-    st.stop()
-
-def to_plain_dict(obj):
-    if isinstance(obj, Mapping):
-        return {k: to_plain_dict(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [to_plain_dict(v) for v in obj]
-    return obj
-
-cfg = to_plain_dict(st.secrets["auth"])  # dict mutabile (st.secrets è read-only)
-credentials = cfg["credentials"]
-cookie      = cfg["cookie"]
-
+# cfg/credentials/cookie già pronti come da tuo codice...
 authenticator = stauth.Authenticate(
     credentials,
     cookie["name"],
     cookie["key"],
     cookie["expiry_days"],
-    auto_hash=True,   # password in chiaro nei secrets -> hash automatico
+    auto_hash=True,
 )
 
-# --- Login compatibile con versioni nuove/vecchie ---
-login_params = inspect.signature(authenticator.login).parameters
-logout_params = inspect.signature(authenticator.logout).parameters
+# 1) Prova la firma nuova (location=...), senza assumere return
+try:
+    authenticator.login(location="main", key="auth_login")
+except TypeError:
+    # 2) Fallback: firma vecchia ('Login','main') che ritorna la tupla
+    name, auth_status, username = authenticator.login("Login", "main", key="auth_login")
+else:
+    # 3) Versione nuova: leggi da session_state
+    auth_status = st.session_state.get("authentication_status")
+    name       = st.session_state.get("name")
+    username   = st.session_state.get("username")
 
-if "location" in login_params:  # nuove versioni
-    name, auth_status, username = authenticator.login(
-        location="main",
-        key="auth_login",
-        # fields={"Form name": "Login"}  # opzionale
-    )
-else:  # versioni precedenti
-    name, auth_status, username = authenticator.login(
-        "Login", "main", key="auth_login"
-    )
-
+# Gestione esiti
 if auth_status is False:
     st.error("Credenziali non valide.")
     st.stop()
@@ -51,12 +30,14 @@ elif auth_status is None:
     st.info("Inserisci username e password per accedere.")
     st.stop()
 else:
-    if "location" in logout_params:  # nuove versioni
+    # Logout compat
+    try:
         authenticator.logout(button_name="Logout", location="sidebar", key="auth_logout")
-    else:  # vecchie versioni
+    except TypeError:
         authenticator.logout("Logout", "sidebar", key="auth_logout")
     st.sidebar.write(f"👤 {name}")
 # --- /AUTH ---
+
 
 
 
@@ -496,6 +477,7 @@ if st.session_state.active_tab == "Prodotti":
             st.rerun()
         else:
             st.info("Seleziona almeno un articolo dal paniere.")
+
 
 
 
