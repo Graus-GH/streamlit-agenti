@@ -1,4 +1,3 @@
-
 import io
 import re
 from typing import List, Tuple
@@ -8,12 +7,9 @@ import pandas as pd
 import requests
 import streamlit as st
 from fpdf import FPDF
+import streamlit_authenticator as stauth
 
 st.set_page_config(page_title="✨GRAUS Proposta Clienti", layout="wide")
-
-
-import streamlit as st
-import streamlit_authenticator as stauth
 
 # --- AUTH (plaintext in secrets + auto_hash) ---
 if "auth" not in st.secrets:
@@ -29,7 +25,7 @@ authenticator = stauth.Authenticate(
     cookie["name"],
     cookie["key"],
     cookie["expiry_days"],
-    auto_hash=True,   # <--- accetta password in chiaro nei Secrets e le hasha al volo
+    auto_hash=True,   # accetta password in chiaro nei Secrets e le hasha al volo
 )
 
 name, auth_status, username = authenticator.login("Login", "main")
@@ -481,6 +477,7 @@ if st.session_state.active_tab == "Prodotti":
             st.rerun()
         else:
             st.info("Seleziona almeno un articolo dal paniere.")
+
 
 
 
