@@ -422,7 +422,7 @@ def run_app():
                 st.session_state.reset_res_selection = not st.session_state.res_select_all_toggle
                 st.rerun()
 
-        add_btn = col_add.button("➕ Aggiungi selezionati al paniere", type="primary", key="add_to_basket_btn")
+        add_btn = col_add.button("➕ Aggiungi selezionati", type="primary", key="add_to_basket_btn")
 
         # Flash message (mostrata sotto i pulsanti)
         if st.session_state.flash:
@@ -567,3 +567,4 @@ if not st.session_state.authenticated:
     login_view()
 else:
     run_app()
+
