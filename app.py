@@ -66,24 +66,14 @@ section[data-testid="stSidebar"] .block-container .stVerticalBlock:last-child{
 /* Header: wrapper per allineare logo a destra */
 .header-right { text-align: right; }
 
-/* ========== NEW: Pulsanti a larghezza piena e testo a capo ========== */
+/* Pulsanti a larghezza piena e testo a capo */
 div.stButton > button {
   width: 100% !important;
   min-height: 42px;
-  white-space: normal;         /* va a capo se necessario */
+  white-space: normal;
   line-height: 1.2;
   padding: 10px 12px;
 }
-
-/* ========== NEW: Chip parole cercate ========== */
-.token-chip{
-  display:inline-block; padding:4px 8px; margin:0 6px 6px 0;
-  border-radius: 9999px; background:#eaf2ff; color:#1e3a8a; font-size:12px;
-  border:1px solid #93c5fd;
-}
-
-/* (Opzionale: se in futuro avrai celle HTML) */
-mark.term{ background:#eaf2ff; padding:0 2px; border-radius:3px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -247,18 +237,6 @@ def with_fw_prefix(df: pd.DataFrame) -> pd.DataFrame:
         d["prodotto"] = np.where(d["is_fw"], "⏳ " + d["prodotto"].astype(str), d["prodotto"])
     return d
 
-# ========== NEW: evidenzia parole nei campi testuali (senza HTML nel data_editor) ==========
-def emphasize_tokens(text: str, tokens: List[str]) -> str:
-    s = str(text or "")
-    for t in tokens:
-        if not t:
-            continue
-        # regex case-insensitive su confine parola "largo"
-        s = re.sub(rf"({re.escape(t)})", r"⟦\1⟧".upper(), s, flags=re.IGNORECASE)
-        # Se un domani useremo HTML per cella:
-        # s = re.sub(rf"({re.escape(t)})", r"<mark class='term'>\1</mark>", s, flags=re.IGNORECASE)
-    return s
-
 # =========================
 # EXPORT (Excel/PDF)
 # =========================
@@ -367,7 +345,7 @@ def run_app():
     with right:
         st.markdown(
             "<div class='header-right'>"
-            "<img src='https://res.cloudinary.com/dct4tiqsl/image/upload/v1754315051/LogoGraus_j7d5jo.png' width='130'/>"
+            "<img src='https://res.cloudinary.com/dct4tiqsl/image/upload/v1754315051/LogoGraus_j7d5j0.png' width='130'/>"
             "</div>",
             unsafe_allow_html=True
         )
@@ -443,12 +421,7 @@ def run_app():
     if st.session_state.active_tab == "Ricerca":
         st.caption(f"Risultati: {len(df_res)}")
 
-        # ========== NEW: chips con parole cercate ==========
-        tokens = tokenize_query(q) if q else []
-        if tokens:
-            st.markdown("".join([f"<span class='token-chip'>🔎 {t}</span>" for t in tokens]), unsafe_allow_html=True)
-
-        # ========== CHANGED: pulsanti su tutta la larghezza (2 colonne uguali) ==========
+        # Pulsanti su tutta la larghezza (2 colonne uguali)
         col_sel, col_add = st.columns(2)
 
         all_on = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
@@ -474,10 +447,6 @@ def run_app():
         # Griglia risultati
         default_sel = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
         df_res_display = with_fw_prefix(df_res)[DISPLAY_COLUMNS].copy()
-        # ========== NEW: evidenzia token nei campi testuali ==========
-        if tokens:
-            for col in ["prodotto", "categoria", "tipologia", "provenienza", "codice"]:
-                df_res_display[col] = df_res_display[col].apply(lambda s: emphasize_tokens(s, tokens))
         df_res_display.insert(0, "sel", default_sel)
 
         edited_res = st.data_editor(
@@ -509,7 +478,7 @@ def run_app():
 
                 st.session_state.res_select_all_toggle = False
                 st.session_state.reset_res_selection = True
-                st.session_state.flash = {"type": "success", "msg": f"Aggiunti {len(df_to_add)} articoli al paniere.", "shown": False}
+                st.session_state.flash = {"type": "success", "msg": f"Aggiunti {len[df_to_add]} articoli al paniere.", "shown": False}
 
                 st.session_state.active_tab = "Prodotti"
                 st.rerun()
@@ -520,7 +489,7 @@ def run_app():
     if st.session_state.active_tab == "Prodotti":
         basket = st.session_state.basket.copy()
 
-        # ========== CHANGED: pulsanti su tutta la larghezza (4 colonne uguali) ==========
+        # Pulsanti su tutta la larghezza (4 colonne uguali)
         col_sel, col_rm, col_xls, col_pdf = st.columns(4)
 
         all_on_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
