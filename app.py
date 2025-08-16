@@ -20,7 +20,7 @@ div[data-testid="stRadio"] > div[role="radiogroup"]{
   display: inline-flex !important;
   gap: 8px !important;
   padding: 6px;
-  border: 1px solid #cbd5e1;    /* bordo grigio chiaro */
+  border: 1px solid #cbd5e1;
   border-radius: 12px;
   background: #ffffff;
   margin: 6px 0 12px 0;
@@ -65,6 +65,25 @@ section[data-testid="stSidebar"] .block-container .stVerticalBlock:last-child{
 
 /* Header: wrapper per allineare logo a destra */
 .header-right { text-align: right; }
+
+/* ========== NEW: Pulsanti a larghezza piena e testo a capo ========== */
+div.stButton > button {
+  width: 100% !important;
+  min-height: 42px;
+  white-space: normal;         /* va a capo se necessario */
+  line-height: 1.2;
+  padding: 10px 12px;
+}
+
+/* ========== NEW: Chip parole cercate ========== */
+.token-chip{
+  display:inline-block; padding:4px 8px; margin:0 6px 6px 0;
+  border-radius: 9999px; background:#eaf2ff; color:#1e3a8a; font-size:12px;
+  border:1px solid #93c5fd;
+}
+
+/* (Opzionale: se in futuro avrai celle HTML) */
+mark.term{ background:#eaf2ff; padding:0 2px; border-radius:3px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -123,7 +142,7 @@ def login_view():
     st.markdown("</div>", unsafe_allow_html=True)
 
 # =========================
-# CONFIG – ORIGINE DATI (Chiunque con il link: Visualizzatore)
+# CONFIG – ORIGINE DATI
 # =========================
 SHEET_ID = "10BFJQTV1yL69cotE779zuR8vtG5NqKWOVH0Uv1AnGaw"
 GID = "707323537"
@@ -228,6 +247,18 @@ def with_fw_prefix(df: pd.DataFrame) -> pd.DataFrame:
         d["prodotto"] = np.where(d["is_fw"], "⏳ " + d["prodotto"].astype(str), d["prodotto"])
     return d
 
+# ========== NEW: evidenzia parole nei campi testuali (senza HTML nel data_editor) ==========
+def emphasize_tokens(text: str, tokens: List[str]) -> str:
+    s = str(text or "")
+    for t in tokens:
+        if not t:
+            continue
+        # regex case-insensitive su confine parola "largo"
+        s = re.sub(rf"({re.escape(t)})", r"⟦\1⟧".upper(), s, flags=re.IGNORECASE)
+        # Se un domani useremo HTML per cella:
+        # s = re.sub(rf"({re.escape(t)})", r"<mark class='term'>\1</mark>", s, flags=re.IGNORECASE)
+    return s
+
 # =========================
 # EXPORT (Excel/PDF)
 # =========================
@@ -314,7 +345,7 @@ def run_app():
         "reset_basket_selection",
         "flash",
         "include_fw",
-        "active_tab",   # "Ricerca" | "Prodotti"
+        "active_tab",
     ]:
         st.session_state.setdefault(k, False if k != "active_tab" else "Ricerca")
 
@@ -333,7 +364,6 @@ def run_app():
     left, spacer, right = st.columns([6, 4, 2])
     with left:
         st.title("✨GRAUS Proposta Clienti")
-        # (rimosso il caption utente dall'header: ora in fondo alla sidebar)
     with right:
         st.markdown(
             "<div class='header-right'>"
@@ -345,7 +375,7 @@ def run_app():
     # ==== SIDEBAR ====
     with st.sidebar:
         sb_top = st.container()
-        sb_bottom = st.container()  # verrà spinto in fondo via CSS
+        sb_bottom = st.container()
 
     # SIDEBAR – Ricerca (parte alta)
     with sb_top:
@@ -413,8 +443,13 @@ def run_app():
     if st.session_state.active_tab == "Ricerca":
         st.caption(f"Risultati: {len(df_res)}")
 
-        # Pulsanti affiancati (come in Prodotti): Seleziona/Deseleziona + Aggiungi
-        col_sel, col_add, _spacer = st.columns([1, 1, 10])
+        # ========== NEW: chips con parole cercate ==========
+        tokens = tokenize_query(q) if q else []
+        if tokens:
+            st.markdown("".join([f"<span class='token-chip'>🔎 {t}</span>" for t in tokens]), unsafe_allow_html=True)
+
+        # ========== CHANGED: pulsanti su tutta la larghezza (2 colonne uguali) ==========
+        col_sel, col_add = st.columns(2)
 
         all_on = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
         with col_sel:
@@ -425,7 +460,7 @@ def run_app():
 
         add_btn = col_add.button("➕ Aggiungi selezionati", type="primary", key="add_to_basket_btn")
 
-        # Flash message (mostrata sotto i pulsanti)
+        # Flash message
         if st.session_state.flash:
             f = st.session_state.flash
             {"success": st.success, "info": st.info, "warning": st.warning, "error": st.error}.get(
@@ -439,6 +474,10 @@ def run_app():
         # Griglia risultati
         default_sel = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
         df_res_display = with_fw_prefix(df_res)[DISPLAY_COLUMNS].copy()
+        # ========== NEW: evidenzia token nei campi testuali ==========
+        if tokens:
+            for col in ["prodotto", "categoria", "tipologia", "provenienza", "codice"]:
+                df_res_display[col] = df_res_display[col].apply(lambda s: emphasize_tokens(s, tokens))
         df_res_display.insert(0, "sel", default_sel)
 
         edited_res = st.data_editor(
@@ -448,9 +487,9 @@ def run_app():
             num_rows="fixed",
             column_config={
                 "sel": st.column_config.CheckboxColumn(label="", width=38, help="Seleziona riga"),
-                "codice": st.column_config.TextColumn(width=50),
-                "prodotto": st.column_config.TextColumn(width=380),
-                "prezzo": st.column_config.NumberColumn(format="€ %.2f", width=75),
+                "codice": st.column_config.TextColumn(width=80),
+                "prodotto": st.column_config.TextColumn(width=420),
+                "prezzo": st.column_config.NumberColumn(format="€ %.2f", width=90),
                 "categoria": st.column_config.TextColumn(width=160),
                 "tipologia": st.column_config.TextColumn(width=160),
                 "provenienza": st.column_config.TextColumn(width=160),
@@ -481,7 +520,8 @@ def run_app():
     if st.session_state.active_tab == "Prodotti":
         basket = st.session_state.basket.copy()
 
-        col_sel, col_rm, col_xls, col_pdf, _spacer = st.columns([1, 1, 1, 1, 10])
+        # ========== CHANGED: pulsanti su tutta la larghezza (4 colonne uguali) ==========
+        col_sel, col_rm, col_xls, col_pdf = st.columns(4)
 
         all_on_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
         if col_sel.button("Deseleziona tutto il paniere" if all_on_b else "Seleziona tutto il paniere"):
@@ -522,9 +562,9 @@ def run_app():
             num_rows="fixed",
             column_config={
                 "rm": st.column_config.CheckboxColumn(label="", width=38, help="Seleziona per rimuovere"),
-                "codice": st.column_config.TextColumn(width=50),
-                "prodotto": st.column_config.TextColumn(width=380),
-                "prezzo": st.column_config.NumberColumn(format="€ %.2f", width=75),
+                "codice": st.column_config.TextColumn(width=80),
+                "prodotto": st.column_config.TextColumn(width=420),
+                "prezzo": st.column_config.NumberColumn(format="€ %.2f", width=90),
                 "categoria": st.column_config.TextColumn(width=160),
                 "tipologia": st.column_config.TextColumn(width=160),
                 "provenienza": st.column_config.TextColumn(width=160),
@@ -568,5 +608,3 @@ if not st.session_state.authenticated:
     login_view()
 else:
     run_app()
-
-
