@@ -1,3 +1,6 @@
+Perfetto — ecco il file **aggiornato** con `st.query_params` al posto di `st.experimental_get_query_params` (e tutto il resto identico alla versione iPad). Incolla tutto:
+
+```python
 import io
 import re
 from typing import List, Tuple
@@ -62,11 +65,11 @@ div[data-testid="stDataEditor"] *{ font-size:15px; }
   /* Checkbox più grandi dove possibile */
   input[type="checkbox"]{ width: 22px; height: 22px; }
 
-  /* Data editor: aumenta padding attorno per evitare tap errati */
+  /* Data editor: padding */
   div[data-testid="stDataEditor"]{ padding-top: 4px; padding-bottom: 4px; }
 }
 
-/* Piccolo fix per download buttons */
+/* Download buttons full width */
 a[kind="download"]{ width:100%; display:inline-block; text-align:center; padding:12px 10px; }
 </style>
 """, unsafe_allow_html=True)
@@ -255,9 +258,10 @@ def run_app():
         default = "Ricerca" if k=="active_tab" else False
         st.session_state.setdefault(k, default)
 
-    # Permetti attivazione via query param ?ipad=1
-    qp = st.experimental_get_query_params()
-    if "ipad" in qp and str(qp["ipad"][0]).lower() in ("1","true","yes"): st.session_state.ipad_mode = True
+    # Query param ?ipad=1  --> usa st.query_params
+    qp = st.query_params
+    if "ipad" in qp and str(qp["ipad"]).lower() in ("1","true","yes"):
+        st.session_state.ipad_mode = True
 
     # DATA
     with st.spinner("Caricamento dati…"):
@@ -338,7 +342,6 @@ def run_app():
     if st.session_state.active_tab == "Ricerca":
         st.caption(f"Risultati: {len(df_res)}")
 
-        # Bottoni: su iPad verticali rimangono 2 colonne larghe; già full-width via CSS
         col_sel, col_add = st.columns(2)
         all_on = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
         with col_sel:
@@ -348,7 +351,6 @@ def run_app():
                 st.rerun()
         add_btn = col_add.button("➕ Aggiungi selezionati", type="primary", key="add_to_basket_btn")
 
-        # Flash
         if st.session_state.flash:
             f = st.session_state.flash
             {"success": st.success, "info": st.info, "warning": st.warning, "error": st.error}.get(
@@ -356,7 +358,6 @@ def run_app():
             if not f.get("shown", False): st.session_state.flash["shown"] = True
             else: st.session_state.flash = None
 
-        # Griglia risultati (colonne più strette per iPad)
         default_sel = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
         df_res_display = with_fw_prefix(df_res)[DISPLAY_COLUMNS].copy()
         df_res_display.insert(0, "sel", default_sel)
@@ -407,7 +408,7 @@ def run_app():
     if st.session_state.active_tab == "Prodotti":
         basket = st.session_state.basket.copy()
 
-        # Bottoni: su iPad 2x2 (colonne = 2 righe di pulsanti)
+        # Bottoni: su iPad 2x2, altrimenti 1x4
         if st.session_state.ipad_mode:
             c1, c2 = st.columns(2)
             c3, c4 = st.columns(2)
@@ -497,3 +498,6 @@ if not st.session_state.authenticated:
     login_view()
 else:
     run_app()
+```
+
+Se vuoi, posso aggiungere anche un parametro `?tab=prodotti` per aprire direttamente il paniere.
