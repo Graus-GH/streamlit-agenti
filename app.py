@@ -1,6 +1,4 @@
-Perfetto — ecco il file **aggiornato** con `st.query_params` al posto di `st.experimental_get_query_params` (e tutto il resto identico alla versione iPad). Incolla tutto:
 
-```python
 import io
 import re
 from typing import List, Tuple
@@ -501,3 +499,4 @@ else:
 ```
 
 Se vuoi, posso aggiungere anche un parametro `?tab=prodotti` per aprire direttamente il paniere.
+
