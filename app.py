@@ -11,37 +11,16 @@ from fpdf import FPDF
 st.set_page_config(page_title="✨GRAUS Proposta Clienti", layout="wide")
 
 # =========================
-# CSS – radio (tabs) + login card + sidebar footer + logo right + btn-grid
+# CSS – radio (tabs) + login card + sidebar footer + logo right
 # =========================
 st.markdown("""
 <style>
-/* --- WRAP SOLO per le righe di pulsanti marcate .btn-grid --- */
-@media (max-width: 1280px){
-  .btn-grid > div[data-testid="stHorizontalBlock"]{
-    /* Streamlit usa grid; qui la rendiamo responsiva che va a capo */
-    display: grid !important;
-    grid-auto-flow: row !important;
-    grid-auto-columns: unset !important;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)) !important;
-    gap: 8px !important;
-    align-items: start !important;
-  }
-
-  /* I bottoni riempiono la colonna e non spezzano verticalmente */
-  .btn-grid .stButton button,
-  .btn-grid .stDownloadButton button{
-    width: 100% !important;
-    min-width: 220px !important;
-    white-space: nowrap !important;
-  }
-}
-
 /* Contenitore con bordo attorno al radio (tabs) */
 div[data-testid="stRadio"] > div[role="radiogroup"]{
   display: inline-flex !important;
   gap: 8px !important;
   padding: 6px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid #cbd5e1;    /* bordo grigio chiaro */
   border-radius: 12px;
   background: #ffffff;
   margin: 6px 0 12px 0;
@@ -117,7 +96,7 @@ def login_view():
     st.title("🔐 Accesso richiesto")
     st.markdown('<div class="login-card">', unsafe_allow_html=True)
     with st.form("login_form", clear_on_submit=False):
-        u_in = st.text_input("Username (es. pippo) o Nome", placeholder="inserisci il Tuo nome utente...")
+        u_in = st.text_input("Username (es. merch) o Nome", placeholder="inserisci il Tuo nome utente...")
         p_in = st.text_input("Password", type="password")
         ok = st.form_submit_button("Accedi")
 
@@ -228,7 +207,7 @@ def load_data(url_or_urls) -> pd.DataFrame:
     raise last_exc if last_exc else RuntimeError("Errore nel download CSV")
 
 def tokenize_query(q: str) -> List[str]:
-    return [t for t in re.split(r"\\s+", q.strip()) if t]
+    return [t for t in re.split(r"\s+", q.strip()) if t]
 
 def row_matches(row: pd.Series, tokens: List[str], fields: List[str]) -> bool:
     haystack = " ".join(str(row[f]) for f in fields).lower()
@@ -312,7 +291,7 @@ def make_pdf(df: pd.DataFrame) -> bytes:
             str(r.get("provenienza", "")),
         ]
         for c, w in zip(cells, col_widths):
-            txt = pdf_safe(c.replace("\\n", " "))
+            txt = pdf_safe(c.replace("\n", " "))
             if len(txt) > 80:
                 txt = txt[:77] + "..."
             pdf.cell(w, 6, txt, border=1)
@@ -354,6 +333,7 @@ def run_app():
     left, spacer, right = st.columns([6, 4, 2])
     with left:
         st.title("✨GRAUS Proposta Clienti")
+        # (rimosso il caption utente dall'header: ora in fondo alla sidebar)
     with right:
         st.markdown(
             "<div class='header-right'>"
@@ -433,9 +413,8 @@ def run_app():
     if st.session_state.active_tab == "Ricerca":
         st.caption(f"Risultati: {len(df_res)}")
 
-        # === RIGA PULSANTI: Seleziona/Deseleziona + Aggiungi ===
-        st.markdown('<div class="btn-grid">', unsafe_allow_html=True)
-        col_sel, col_add = st.columns([1, 1])
+        # Pulsanti affiancati (come in Prodotti): Seleziona/Deseleziona + Aggiungi
+        col_sel, col_add, _spacer = st.columns([1, 1, 10])
 
         all_on = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
         with col_sel:
@@ -445,7 +424,6 @@ def run_app():
                 st.rerun()
 
         add_btn = col_add.button("➕ Aggiungi selezionati", type="primary", key="add_to_basket_btn")
-        st.markdown('</div>', unsafe_allow_html=True)
 
         # Flash message (mostrata sotto i pulsanti)
         if st.session_state.flash:
@@ -492,7 +470,7 @@ def run_app():
 
                 st.session_state.res_select_all_toggle = False
                 st.session_state.reset_res_selection = True
-                st.session_state.flash = {"type": "success", "msg": f"Aggiunti {len[df_to_add]} articoli al paniere.", "shown": False}
+                st.session_state.flash = {"type": "success", "msg": f"Aggiunti {len(df_to_add)} articoli al paniere.", "shown": False}
 
                 st.session_state.active_tab = "Prodotti"
                 st.rerun()
@@ -503,9 +481,7 @@ def run_app():
     if st.session_state.active_tab == "Prodotti":
         basket = st.session_state.basket.copy()
 
-        # === RIGA PULSANTI: Seleziona, Rimuovi, Excel, PDF ===
-        st.markdown('<div class="btn-grid">', unsafe_allow_html=True)
-        col_sel, col_rm, col_xls, col_pdf = st.columns([1, 1, 1, 1])
+        col_sel, col_rm, col_xls, col_pdf, _spacer = st.columns([1, 1, 1, 1, 10])
 
         all_on_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
         if col_sel.button("Deseleziona tutto il paniere" if all_on_b else "Seleziona tutto il paniere"):
@@ -534,7 +510,6 @@ def run_app():
             file_name="prodotti_selezionati.pdf",
             mime="application/pdf",
         )
-        st.markdown('</div>', unsafe_allow_html=True)
 
         default_sel_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
         basket_display = with_fw_prefix(basket)[DISPLAY_COLUMNS].copy()
