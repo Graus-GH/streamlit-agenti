@@ -15,6 +15,28 @@ st.set_page_config(page_title="✨GRAUS Proposta Clienti", layout="wide")
 # =========================
 st.markdown("""
 <style>
+/* --- WRAP dei gruppi di colonne che contengono pulsanti --- */
+@media (max-width: 1200px){
+  /* consenti il ritorno a capo del row di colonne che ha pulsanti */
+  div[data-testid="stHorizontalBlock"]:has(button){
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+  /* ogni colonna del gruppo: base 240–280px così, quando non c'è spazio, vanno sotto */
+  div[data-testid="stHorizontalBlock"]:has(button) > div[data-testid="column"]{
+    flex: 1 0 260px !important;   /* grow | shrink | basis */
+    max-width: 100% !important;
+  }
+}
+
+/* opzionale: impedisce che il testo del bottone vada in verticale */
+button[kind][data-testid="baseButton-secondary"],
+button[kind][data-testid="baseButton-primary"]{
+  white-space: nowrap;
+}
+
+
+
 /* Contenitore con bordo attorno al radio (tabs) */
 div[data-testid="stRadio"] > div[role="radiogroup"]{
   display: inline-flex !important;
@@ -568,4 +590,5 @@ if not st.session_state.authenticated:
     login_view()
 else:
     run_app()
+
 
