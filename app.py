@@ -96,7 +96,7 @@ def login_view():
     st.title("🔐 Accesso richiesto")
     st.markdown('<div class="login-card">', unsafe_allow_html=True)
     with st.form("login_form", clear_on_submit=False):
-        u_in = st.text_input("Username (es. merch) o Nome", placeholder="inserisci il Tuo nome utente...")
+        u_in = st.text_input("Username (es. pippo) o Nome", placeholder="inserisci il Tuo nome utente...")
         p_in = st.text_input("Password", type="password")
         ok = st.form_submit_button("Accedi")
 
@@ -568,3 +568,4 @@ if not st.session_state.authenticated:
     login_view()
 else:
     run_app()
+
