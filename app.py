@@ -15,37 +15,25 @@ st.set_page_config(page_title="✨GRAUS Proposta Clienti", layout="wide")
 # =========================
 st.markdown("""
 <style>
-/* --- WRAP colonne con pulsanti su schermi piccoli --- */
+/* --- Colonne responsivi: vai a capo su schermi piccoli --- */
 @media (max-width: 1200px){
-  /* trasforma la row (di default è grid) in flex che può andare a capo */
-  div[data-testid="stHorizontalBlock"]:has(.stButton, .stDownloadButton){
-    display: flex !important;
-    flex-wrap: wrap !important;
-    align-items: center;
+  /* tutte le righe create da st.columns diventano grid auto-fit */
+  div[data-testid="stHorizontalBlock"]{
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)) !important;
     gap: 8px !important;
+    align-items: start !important;
   }
 
-  /* le colonne che CONTENGONO bottoni hanno una base minima -> vanno sotto se manca spazio */
-  div[data-testid="stHorizontalBlock"]:has(.stButton, .stDownloadButton)
-    > div[data-testid="column"]:has(.stButton, .stDownloadButton){
-      flex: 1 0 260px !important;   /* grow | shrink | basis */
-      min-width: 240px !important;
-      max-width: 100% !important;
-  }
-
-  /* le colonne senza bottoni (es. spacer) si prendono lo spazio restante */
-  div[data-testid="stHorizontalBlock"]:has(.stButton, .stDownloadButton)
-    > div[data-testid="column"]:not(:has(.stButton, .stDownloadButton)){
-      flex: 100 1 0 !important;
-      max-width: 100% !important;
-  }
-
-  /* i bottoni riempiono la loro colonna e il testo non va a capo verticale */
-  .stButton button, .stDownloadButton button{
+  /* i bottoni riempiono la loro colonna e il testo non spezza in verticale */
+  .stButton button,
+  .stDownloadButton button{
     width: 100% !important;
+    min-width: 220px !important;
     white-space: nowrap !important;
   }
 }
+
 
 
 
@@ -603,6 +591,7 @@ if not st.session_state.authenticated:
     login_view()
 else:
     run_app()
+
 
 
 
