@@ -93,7 +93,12 @@ def login_view():
     def norm(s: str) -> str:
         return (s or "").replace("\u00A0", " ").strip()
 
-    st.title("🔐 Accesso richiesto")
+    # rimuovo il titolo (era la causa del box superiore)
+    # st.title("🔐 Accesso richiesto")
+
+    # eventualmente puoi usare un testo inline, senza box Streamlit:
+    st.markdown("<h3 style='margin-bottom:16px;'>🔐 Accesso richiesto</h3>", unsafe_allow_html=True)
+
     st.markdown('<div class="login-card">', unsafe_allow_html=True)
     with st.form("login_form", clear_on_submit=False):
         u_in = st.text_input("Username", placeholder="inserisci il Tuo nome utente...")
@@ -121,6 +126,7 @@ def login_view():
             else:
                 st.error("Credenziali non valide. Controlla maiuscole/spazi.")
     st.markdown("</div>", unsafe_allow_html=True)
+
 
 # =========================
 # CONFIG – ORIGINE DATI (Chiunque con il link: Visualizzatore)
@@ -568,4 +574,5 @@ if not st.session_state.authenticated:
     login_view()
 else:
     run_app()
+
 
