@@ -11,19 +11,26 @@ from fpdf import FPDF
 st.set_page_config(page_title="✨GRAUS Proposta Clienti", layout="wide")
 
 # =========================
-# CSS – radio (tabs) + login card + sidebar footer + logo right
+# CSS – responsive UI
 # =========================
 st.markdown("""
 <style>
+/* --- BASE --- */
+:root{
+  --g-border: #e2e8f0;
+  --g-muted: #f8fafc;
+}
+
 /* Contenitore con bordo attorno al radio (tabs) */
 div[data-testid="stRadio"] > div[role="radiogroup"]{
   display: inline-flex !important;
   gap: 8px !important;
   padding: 6px;
-  border: 1px solid #cbd5e1;    /* bordo grigio chiaro */
+  border: 1px solid #cbd5e1;
   border-radius: 12px;
   background: #ffffff;
   margin: 6px 0 12px 0;
+  flex-wrap: wrap; /* permette già di andare a capo */
 }
 /* Ogni opzione come una "pill" */
 div[data-testid="stRadio"] [role="radio"]{
@@ -36,19 +43,15 @@ div[data-testid="stRadio"] [role="radio"]{
   display: inline-flex;
   align-items: center;
 }
-/* Attivo: blu leggero */
 div[data-testid="stRadio"] [role="radio"][aria-checked="true"]{
   background: #eaf2ff;
   border-color: #93c5fd;
 }
-/* Hover gradevole */
-div[data-testid="stRadio"] [role="radio"]:hover{
-  background: #f1f5f9;
-}
+div[data-testid="stRadio"] [role="radio"]:hover{ background: #f1f5f9; }
 
 /* Card login */
 .login-card {
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--g-border);
   border-radius: 12px;
   padding: 18px;
   background: #ffffff;
@@ -65,6 +68,56 @@ section[data-testid="stSidebar"] .block-container .stVerticalBlock:last-child{
 
 /* Header: wrapper per allineare logo a destra */
 .header-right { text-align: right; }
+.header-right img { max-width: 130px; height: auto; }
+
+/* Pulsanti e input: min-width per non spezzarsi male su md */
+.stButton>button, .stDownloadButton>button {
+  min-height: 38px;
+}
+
+/* --- RESPONSIVE (<= 1200px) --- */
+@media (max-width: 1200px){
+  /* Rendi "wrappabili" le righe orizzontali di colonne (pulsanti, ecc.) */
+  div[data-testid="stHorizontalBlock"]{
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center;
+    gap: 8px !important;
+  }
+  /* Ogni colonna prende spazio flessibile e va a capo se serve */
+  div[data-testid="column"]{
+    flex: 1 1 240px !important;
+    width: auto !important;
+  }
+}
+
+/* --- RESPONSIVE (<= 900px) --- */
+@media (max-width: 900px){
+  /* Titolo più compatto e logo più piccolo */
+  .header-right img { max-width: 96px; }
+  h1, .stMarkdown h1 { font-size: 1.4rem !important; }
+
+  /* Colonne a piena larghezza su mobile */
+  div[data-testid="column"]{ flex: 1 1 100% !important; width: 100% !important; }
+
+  /* Bottoni e input full width per facilità d'uso */
+  .stButton>button, .stDownloadButton>button { width: 100% !important; }
+  .stNumberInput, .stTextInput, .stSelectbox, .stSlider {
+    width: 100% !important;
+  }
+
+  /* Radio pill: spazio verticale fra opzioni */
+  div[data-testid="stRadio"] [role="radio"]{ margin-bottom: 6px; }
+}
+
+/* --- RESPONSIVE (<= 600px) --- */
+@media (max-width: 600px){
+  /* Riduci padding complessivo */
+  .block-container{ padding-left: 0.8rem; padding-right: 0.8rem; }
+
+  /* Data editor: font leggermente più piccolo per stare in viewport */
+  [data-testid="stDataFrame"] * { font-size: 0.92rem; }
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -93,10 +146,6 @@ def login_view():
     def norm(s: str) -> str:
         return (s or "").replace("\u00A0", " ").strip()
 
-    # rimuovo il titolo (era la causa del box superiore)
-    # st.title("🔐 Accesso richiesto")
-
-    # eventualmente puoi usare un testo inline, senza box Streamlit:
     st.markdown("<h3 style='margin-bottom:16px;'>🔐 Accesso richiesto</h3>", unsafe_allow_html=True)
 
     st.markdown('<div class="login-card">', unsafe_allow_html=True)
@@ -129,7 +178,7 @@ def login_view():
 
 
 # =========================
-# CONFIG – ORIGINE DATI (Chiunque con il link: Visualizzatore)
+# CONFIG – ORIGINE DATI
 # =========================
 SHEET_ID = "10BFJQTV1yL69cotE779zuR8vtG5NqKWOVH0Uv1AnGaw"
 GID = "707323537"
@@ -320,9 +369,11 @@ def run_app():
         "reset_basket_selection",
         "flash",
         "include_fw",
-        "active_tab",   # "Ricerca" | "Prodotti"
+        "active_tab",
+        "compact_view",  # NUOVO: vista compatta per mobile
     ]:
-        st.session_state.setdefault(k, False if k != "active_tab" else "Ricerca")
+        default = False if k not in ("active_tab",) else "Ricerca"
+        st.session_state.setdefault(k, default)
 
     # DATA
     with st.spinner("Caricamento dati…"):
@@ -339,11 +390,10 @@ def run_app():
     left, spacer, right = st.columns([6, 4, 2])
     with left:
         st.title("✨GRAUS Proposta Clienti")
-        # (rimosso il caption utente dall'header: ora in fondo alla sidebar)
     with right:
         st.markdown(
             "<div class='header-right'>"
-            "<img src='https://res.cloudinary.com/dct4tiqsl/image/upload/v1754315051/LogoGraus_j7d5jo.png' width='130'/>"
+            "<img src='https://res.cloudinary.com/dct4tiqsl/image/upload/v1754315051/LogoGraus_j7d5jo.png' alt='GRAUS'/>"
             "</div>",
             unsafe_allow_html=True
         )
@@ -351,7 +401,7 @@ def run_app():
     # ==== SIDEBAR ====
     with st.sidebar:
         sb_top = st.container()
-        sb_bottom = st.container()  # verrà spinto in fondo via CSS
+        sb_bottom = st.container()  # spinto in fondo via CSS
 
     # SIDEBAR – Ricerca (parte alta)
     with sb_top:
@@ -415,11 +465,20 @@ def run_app():
     choice = st.radio("", options=labels, index=index, horizontal=True, label_visibility="collapsed")
     st.session_state.active_tab = "Ricerca" if choice == labels[0] else "Prodotti"
 
+    # Toggle vista compatta (mobile)
+    st.session_state.compact_view = st.toggle("📱 Vista compatta (mobile)", value=bool(st.session_state.compact_view))
+
+    # Colonne comuni per data_editor (in base a vista)
+    if st.session_state.compact_view:
+        res_cols = ["codice", "prodotto", "prezzo"]
+    else:
+        res_cols = DISPLAY_COLUMNS
+
     # RICERCA
     if st.session_state.active_tab == "Ricerca":
         st.caption(f"Risultati: {len(df_res)}")
 
-        # Pulsanti affiancati (come in Prodotti): Seleziona/Deseleziona + Aggiungi
+        # Pulsanti affiancati che diventano a capo su mobile (CSS sopra)
         col_sel, col_add, _spacer = st.columns([1, 1, 10])
 
         all_on = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
@@ -431,7 +490,7 @@ def run_app():
 
         add_btn = col_add.button("➕ Aggiungi selezionati", type="primary", key="add_to_basket_btn")
 
-        # Flash message (mostrata sotto i pulsanti)
+        # Flash message
         if st.session_state.flash:
             f = st.session_state.flash
             {"success": st.success, "info": st.info, "warning": st.warning, "error": st.error}.get(
@@ -442,26 +501,33 @@ def run_app():
             else:
                 st.session_state.flash = None
 
-        # Griglia risultati
+        # Griglia risultati (più compatta)
         default_sel = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
-        df_res_display = with_fw_prefix(df_res)[DISPLAY_COLUMNS].copy()
+        df_res_display = with_fw_prefix(df_res)[res_cols].copy()
         df_res_display.insert(0, "sel", default_sel)
+
+        # column_config dinamica
+        col_cfg = {
+            "sel": st.column_config.CheckboxColumn(label="", width=38, help="Seleziona riga"),
+        }
+        if "codice" in res_cols:
+            col_cfg["codice"] = st.column_config.TextColumn(width=70 if st.session_state.compact_view else 80)
+        if "prodotto" in res_cols:
+            col_cfg["prodotto"] = st.column_config.TextColumn(width=300 if st.session_state.compact_view else 380)
+        if "prezzo" in res_cols:
+            col_cfg["prezzo"] = st.column_config.NumberColumn(format="€ %.2f", width=85)
+        if not st.session_state.compact_view:
+            col_cfg["categoria"] = st.column_config.TextColumn(width=160)
+            col_cfg["tipologia"] = st.column_config.TextColumn(width=160)
+            col_cfg["provenienza"] = st.column_config.TextColumn(width=160)
 
         edited_res = st.data_editor(
             df_res_display,
             hide_index=True,
             use_container_width=True,
             num_rows="fixed",
-            column_config={
-                "sel": st.column_config.CheckboxColumn(label="", width=38, help="Seleziona riga"),
-                "codice": st.column_config.TextColumn(width=50),
-                "prodotto": st.column_config.TextColumn(width=380),
-                "prezzo": st.column_config.NumberColumn(format="€ %.2f", width=75),
-                "categoria": st.column_config.TextColumn(width=160),
-                "tipologia": st.column_config.TextColumn(width=160),
-                "provenienza": st.column_config.TextColumn(width=160),
-            },
-            disabled=["codice", "prodotto", "prezzo", "categoria", "tipologia", "provenienza"],
+            column_config=col_cfg,
+            disabled=[c for c in df_res_display.columns if c not in ("sel",)],
             key="res_editor",
         )
 
@@ -517,25 +583,31 @@ def run_app():
             mime="application/pdf",
         )
 
+        # Vista compatta anche qui
+        b_cols = ["codice", "prodotto", "prezzo"] if st.session_state.compact_view else DISPLAY_COLUMNS
         default_sel_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
-        basket_display = with_fw_prefix(basket)[DISPLAY_COLUMNS].copy()
+        basket_display = with_fw_prefix(basket)[b_cols].copy()
         basket_display.insert(0, "rm", default_sel_b)
+
+        col_cfg_b = {"rm": st.column_config.CheckboxColumn(label="", width=38, help="Seleziona per rimuovere")}
+        if "codice" in b_cols:
+            col_cfg_b["codice"] = st.column_config.TextColumn(width=70 if st.session_state.compact_view else 80)
+        if "prodotto" in b_cols:
+            col_cfg_b["prodotto"] = st.column_config.TextColumn(width=300 if st.session_state.compact_view else 380)
+        if "prezzo" in b_cols:
+            col_cfg_b["prezzo"] = st.column_config.NumberColumn(format="€ %.2f", width=85)
+        if not st.session_state.compact_view:
+            col_cfg_b["categoria"] = st.column_config.TextColumn(width=160)
+            col_cfg_b["tipologia"] = st.column_config.TextColumn(width=160)
+            col_cfg_b["provenienza"] = st.column_config.TextColumn(width=160)
 
         edited_basket = st.data_editor(
             basket_display,
             hide_index=True,
             use_container_width=True,
             num_rows="fixed",
-            column_config={
-                "rm": st.column_config.CheckboxColumn(label="", width=38, help="Seleziona per rimuovere"),
-                "codice": st.column_config.TextColumn(width=50),
-                "prodotto": st.column_config.TextColumn(width=380),
-                "prezzo": st.column_config.NumberColumn(format="€ %.2f", width=75),
-                "categoria": st.column_config.TextColumn(width=160),
-                "tipologia": st.column_config.TextColumn(width=160),
-                "provenienza": st.column_config.TextColumn(width=160),
-            },
-            disabled=["codice", "prodotto", "prezzo", "categoria", "tipologia", "provenienza"],
+            column_config=col_cfg_b,
+            disabled=[c for c in basket_display.columns if c not in ("rm",)],
             key="basket_editor",
         )
 
@@ -574,5 +646,3 @@ if not st.session_state.authenticated:
     login_view()
 else:
     run_app()
-
-
