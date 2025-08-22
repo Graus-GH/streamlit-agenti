@@ -1,5 +1,6 @@
 import io
 import re
+import json
 from typing import List, Tuple
 
 import numpy as np
@@ -7,6 +8,7 @@ import pandas as pd
 import requests
 import streamlit as st
 from fpdf import FPDF
+from streamlit_browser_storage import BrowserStorage  # <<< NUOVO
 
 st.set_page_config(page_title="✨GRAUS Proposta Clienti", layout="wide")
 
@@ -20,7 +22,7 @@ div[data-testid="stRadio"] > div[role="radiogroup"]{
   display: inline-flex !important;
   gap: 8px !important;
   padding: 6px;
-  border: 1px solid #cbd5e1;    /* bordo grigio chiaro */
+  border: 1px solid #cbd5e1;
   border-radius: 12px;
   background: #ffffff;
   margin: 6px 0 12px 0;
@@ -89,6 +91,52 @@ st.session_state.setdefault("authenticated", False)
 st.session_state.setdefault("username", None)
 st.session_state.setdefault("display_name", None)
 
+# =========================
+# PERSISTENZA PANIERE – LocalStorage (Versione B)
+# =========================
+storage = BrowserStorage()  # usa localStorage; persistenza per device/browser
+
+DISPLAY_COLUMNS = ["codice", "prodotto", "prezzo", "categoria", "tipologia", "provenienza"]
+
+def _empty_basket_df() -> pd.DataFrame:
+    return pd.DataFrame(columns=DISPLAY_COLUMNS + ["is_fw"])
+
+def _ensure_columns(df: pd.DataFrame) -> pd.DataFrame:
+    # garantisce l'ordine e la presenza delle colonne
+    for c in DISPLAY_COLUMNS + ["is_fw"]:
+        if c not in df.columns:
+            df[c] = [] if len(df) == 0 else df[c]
+    return df[DISPLAY_COLUMNS + ["is_fw"]]
+
+def _basket_key(username: str) -> str:
+    return f"graus_basket_{username or 'anon'}"
+
+def save_basket_client(username: str, df: pd.DataFrame):
+    try:
+        key = _basket_key(username)
+        storage.set(key, df.to_json(orient="records"))
+    except Exception as e:
+        st.warning(f"⚠️ Impossibile salvare il paniere nel browser: {e}")
+
+def load_basket_client(username: str) -> pd.DataFrame:
+    try:
+        key = _basket_key(username)
+        raw = storage.get(key)
+        if raw:
+            recs = json.loads(raw)
+            df = pd.DataFrame(recs)
+            return _ensure_columns(df)
+    except Exception as e:
+        st.warning(f"⚠️ Impossibile leggere il paniere dal browser: {e}")
+    return _empty_basket_df()
+
+def clear_basket_client(username: str):
+    try:
+        key = _basket_key(username)
+        storage.delete(key)
+    except Exception:
+        pass
+
 def login_view():
     def norm(s: str) -> str:
         return (s or "").replace("\u00A0", " ").strip()
@@ -116,6 +164,8 @@ def login_view():
                 st.session_state.authenticated = True
                 st.session_state.username = u_key
                 st.session_state.display_name = rec["name"]
+                # carica paniere dal LocalStorage del browser
+                st.session_state.basket = load_basket_client(u_key)
                 st.success(f"Benvenuto, {rec['name']}!")
                 st.rerun()
             else:
@@ -141,7 +191,6 @@ BASE_URLS = [gsheet_csv_export_url(SHEET_ID, GID), gsheet_csv_gviz_url(SHEET_ID,
 FW_URLS   = [gsheet_csv_export_url(FW_SHEET_ID, FW_GID), gsheet_csv_gviz_url(FW_SHEET_ID, FW_GID)]
 
 COL_MAP = {"codice": 0, "prodotto": 2, "categoria": 5, "tipologia": 6, "provenienza": 7, "prezzo": 8}
-DISPLAY_COLUMNS = ["codice", "prodotto", "prezzo", "categoria", "tipologia", "provenienza"]
 SEARCH_FIELDS = ["codice", "prodotto", "categoria", "tipologia", "provenienza"]
 
 # =========================
@@ -304,9 +353,9 @@ def make_pdf(df: pd.DataFrame) -> bytes:
 # APP UI (solo dopo login)
 # =========================
 def run_app():
-    # STATE
+    # STATE – inizializza se manca (ma al login ricarichiamo da LocalStorage)
     if "basket" not in st.session_state:
-        st.session_state.basket = pd.DataFrame(columns=DISPLAY_COLUMNS + ["is_fw"])
+        st.session_state.basket = _empty_basket_df()
     for k in [
         "res_select_all_toggle",
         "basket_select_all_toggle",
@@ -333,7 +382,6 @@ def run_app():
     left, spacer, right = st.columns([6, 4, 2])
     with left:
         st.title("✨GRAUS Proposta Clienti")
-        # (rimosso il caption utente dall'header: ora in fondo alla sidebar)
     with right:
         st.markdown(
             "<div class='header-right'>"
@@ -466,7 +514,10 @@ def run_app():
                 df_to_add = df_res[df_res["codice"].isin(selected_codes)]
                 combined = pd.concat([st.session_state.basket, df_to_add], ignore_index=True)
                 combined = combined.drop_duplicates(subset=["codice"]).reset_index(drop=True)
-                st.session_state.basket = combined
+                st.session_state.basket = _ensure_columns(combined)
+
+                # <<< SALVA nel LocalStorage del browser
+                save_basket_client(st.session_state.username, st.session_state.basket)
 
                 st.session_state.res_select_all_toggle = False
                 st.session_state.reset_res_selection = True
@@ -540,6 +591,10 @@ def run_app():
                 st.session_state.basket = st.session_state.basket[
                     ~st.session_state.basket["codice"].isin(selected_codes_b)
                 ].reset_index(drop=True)
+                st.session_state.basket = _ensure_columns(st.session_state.basket)
+
+                # <<< SALVA nel LocalStorage del browser
+                save_basket_client(st.session_state.username, st.session_state.basket)
 
                 st.session_state.basket_select_all_toggle = False
                 st.session_state.reset_basket_selection = True
@@ -557,6 +612,8 @@ def run_app():
             st.caption(f"👤 {st.session_state.display_name}")
         with rcol:
             if st.button("Logout"):
+                # salva per sicurezza prima di uscire
+                save_basket_client(st.session_state.username, st.session_state.basket)
                 for k in ["authenticated", "username", "display_name"]:
                     st.session_state[k] = None if k != "authenticated" else False
                 st.rerun()
