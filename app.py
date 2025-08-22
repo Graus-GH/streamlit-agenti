@@ -1,6 +1,9 @@
 import io
 import re
+import os
 import json
+import time
+import sqlite3
 from typing import List, Tuple
 
 import numpy as np
@@ -8,7 +11,6 @@ import pandas as pd
 import requests
 import streamlit as st
 from fpdf import FPDF
-from streamlit_browser_storage import BrowserStorage  # <<< NUOVO
 
 st.set_page_config(page_title="✨GRAUS Proposta Clienti", layout="wide")
 
@@ -17,7 +19,6 @@ st.set_page_config(page_title="✨GRAUS Proposta Clienti", layout="wide")
 # =========================
 st.markdown("""
 <style>
-/* Contenitore con bordo attorno al radio (tabs) */
 div[data-testid="stRadio"] > div[role="radiogroup"]{
   display: inline-flex !important;
   gap: 8px !important;
@@ -27,7 +28,6 @@ div[data-testid="stRadio"] > div[role="radiogroup"]{
   background: #ffffff;
   margin: 6px 0 12px 0;
 }
-/* Ogni opzione come una "pill" */
 div[data-testid="stRadio"] [role="radio"]{
   padding: 6px 12px;
   border: 1px solid transparent;
@@ -35,37 +35,15 @@ div[data-testid="stRadio"] [role="radio"]{
   cursor: pointer;
   font-weight: 500;
   transition: background-color .15s ease, border-color .15s ease;
-  display: inline-flex;
-  align-items: center;
+  display: inline-flex; align-items: center;
 }
-/* Attivo: blu leggero */
 div[data-testid="stRadio"] [role="radio"][aria-checked="true"]{
-  background: #eaf2ff;
-  border-color: #93c5fd;
+  background: #eaf2ff; border-color: #93c5fd;
 }
-/* Hover gradevole */
-div[data-testid="stRadio"] [role="radio"]:hover{
-  background: #f1f5f9;
-}
-
-/* Card login */
-.login-card {
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  padding: 18px;
-  background: #ffffff;
-}
-
-/* Sidebar: porta l'ultimo blocco (user/logout) in fondo */
-section[data-testid="stSidebar"] .block-container{
-  display: flex; flex-direction: column; height: 100%;
-}
-section[data-testid="stSidebar"] .block-container .stVerticalBlock:last-child{
-  margin-top: auto;
-  border-top: 1px solid #eee; padding-top: 10px;
-}
-
-/* Header: wrapper per allineare logo a destra */
+div[data-testid="stRadio"] [role="radio"]:hover{ background: #f1f5f9; }
+.login-card { border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; background: #fff; }
+section[data-testid="stSidebar"] .block-container{ display:flex; flex-direction:column; height:100%; }
+section[data-testid="stSidebar"] .block-container .stVerticalBlock:last-child{ margin-top:auto; border-top:1px solid #eee; padding-top:10px; }
 .header-right { text-align: right; }
 </style>
 """, unsafe_allow_html=True)
@@ -92,50 +70,69 @@ st.session_state.setdefault("username", None)
 st.session_state.setdefault("display_name", None)
 
 # =========================
-# PERSISTENZA PANIERE – LocalStorage (Versione B)
+# PERSISTENZA PANIERE – SQLite (no dipendenze)
 # =========================
-storage = BrowserStorage()  # usa localStorage; persistenza per device/browser
-
 DISPLAY_COLUMNS = ["codice", "prodotto", "prezzo", "categoria", "tipologia", "provenienza"]
+
+def _app_dir() -> str:
+    # su Streamlit Cloud, /mount/src/<repo> è scrivibile nella sandbox corrente
+    base = os.path.dirname(os.path.abspath(__file__))
+    return base
+
+DB_PATH = os.path.join(_app_dir(), "baskets.sqlite")
+
+@st.cache_resource(show_spinner=False)
+def _db_init():
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS baskets (
+            username TEXT PRIMARY KEY,
+            data TEXT NOT NULL,
+            updated_at REAL NOT NULL
+        )
+    """)
+    return conn
+
+def save_basket(username: str, df: pd.DataFrame):
+    conn = _db_init()
+    data = df.to_json(orient="records")
+    conn.execute(
+        "INSERT INTO baskets(username, data, updated_at) VALUES(?,?,?) "
+        "ON CONFLICT(username) DO UPDATE SET data=excluded.data, updated_at=excluded.updated_at",
+        (username, data, time.time())
+    )
+    conn.commit()
+
+def load_basket(username: str) -> pd.DataFrame:
+    conn = _db_init()
+    cur = conn.execute("SELECT data FROM baskets WHERE username=?", (username,))
+    row = cur.fetchone()
+    if row and row[0]:
+        try:
+            recs = json.loads(row[0])
+            df = pd.DataFrame(recs)
+            # garantisci ordine/colonne attese
+            for c in DISPLAY_COLUMNS + ["is_fw"]:
+                if c not in df.columns:
+                    df[c] = [] if len(df)==0 else df[c]
+            return df[DISPLAY_COLUMNS + ["is_fw"]]
+        except Exception:
+            pass
+    return pd.DataFrame(columns=DISPLAY_COLUMNS + ["is_fw"])
+
+def clear_basket(username: str):
+    conn = _db_init()
+    conn.execute("DELETE FROM baskets WHERE username=?", (username,))
+    conn.commit()
 
 def _empty_basket_df() -> pd.DataFrame:
     return pd.DataFrame(columns=DISPLAY_COLUMNS + ["is_fw"])
 
 def _ensure_columns(df: pd.DataFrame) -> pd.DataFrame:
-    # garantisce l'ordine e la presenza delle colonne
     for c in DISPLAY_COLUMNS + ["is_fw"]:
         if c not in df.columns:
-            df[c] = [] if len(df) == 0 else df[c]
+            df[c] = [] if len(df)==0 else df[c]
     return df[DISPLAY_COLUMNS + ["is_fw"]]
-
-def _basket_key(username: str) -> str:
-    return f"graus_basket_{username or 'anon'}"
-
-def save_basket_client(username: str, df: pd.DataFrame):
-    try:
-        key = _basket_key(username)
-        storage.set(key, df.to_json(orient="records"))
-    except Exception as e:
-        st.warning(f"⚠️ Impossibile salvare il paniere nel browser: {e}")
-
-def load_basket_client(username: str) -> pd.DataFrame:
-    try:
-        key = _basket_key(username)
-        raw = storage.get(key)
-        if raw:
-            recs = json.loads(raw)
-            df = pd.DataFrame(recs)
-            return _ensure_columns(df)
-    except Exception as e:
-        st.warning(f"⚠️ Impossibile leggere il paniere dal browser: {e}")
-    return _empty_basket_df()
-
-def clear_basket_client(username: str):
-    try:
-        key = _basket_key(username)
-        storage.delete(key)
-    except Exception:
-        pass
 
 def login_view():
     def norm(s: str) -> str:
@@ -164,8 +161,8 @@ def login_view():
                 st.session_state.authenticated = True
                 st.session_state.username = u_key
                 st.session_state.display_name = rec["name"]
-                # carica paniere dal LocalStorage del browser
-                st.session_state.basket = load_basket_client(u_key)
+                # carica paniere dal DB
+                st.session_state.basket = load_basket(u_key)
                 st.success(f"Benvenuto, {rec['name']}!")
                 st.rerun()
             else:
@@ -173,7 +170,7 @@ def login_view():
     st.markdown("</div>", unsafe_allow_html=True)
 
 # =========================
-# CONFIG – ORIGINE DATI (Chiunque con il link: Visualizzatore)
+# CONFIG – ORIGINE DATI
 # =========================
 SHEET_ID = "10BFJQTV1yL69cotE779zuR8vtG5NqKWOVH0Uv1AnGaw"
 GID = "707323537"
@@ -353,7 +350,7 @@ def make_pdf(df: pd.DataFrame) -> bytes:
 # APP UI (solo dopo login)
 # =========================
 def run_app():
-    # STATE – inizializza se manca (ma al login ricarichiamo da LocalStorage)
+    # STATE – inizializza se manca (ma al login ricarichiamo dal DB)
     if "basket" not in st.session_state:
         st.session_state.basket = _empty_basket_df()
     for k in [
@@ -372,7 +369,7 @@ def run_app():
         try:
             df_base = load_data(BASE_URLS)
         except Exception as e:
-            st.error("❌ Impossibile caricare il *listino base*. Verifica che il file sia su 'Chiunque con il link: Visualizzatore' e che ID/GID siano corretti.")
+            st.error("❌ Impossibile caricare il *listino base*. Verifica condivisione e ID/GID.")
             st.caption(f"Prova ad aprire in incognito: {BASE_URLS[0]}")
             st.exception(e)
             st.stop()
@@ -393,9 +390,9 @@ def run_app():
     # ==== SIDEBAR ====
     with st.sidebar:
         sb_top = st.container()
-        sb_bottom = st.container()  # verrà spinto in fondo via CSS
+        sb_bottom = st.container()  # spinto in fondo via CSS
 
-    # SIDEBAR – Ricerca (parte alta)
+    # SIDEBAR – Ricerca
     with sb_top:
         st.header("🔎 Ricerca")
         with st.form("search_form_sidebar", clear_on_submit=False):
@@ -422,8 +419,7 @@ def run_app():
             tokens = tokenize_query(q) if q else []
             mask_text = (
                 df_all.apply(lambda r: row_matches(r, tokens, SEARCH_FIELDS), axis=1)
-                if tokens
-                else pd.Series(True, index=df_all.index)
+                if tokens else pd.Series(True, index=df_all.index)
             )
             df_after_text = df_all.loc[mask_text]
 
@@ -461,7 +457,6 @@ def run_app():
     if st.session_state.active_tab == "Ricerca":
         st.caption(f"Risultati: {len(df_res)}")
 
-        # Pulsanti affiancati (come in Prodotti): Seleziona/Deseleziona + Aggiungi
         col_sel, col_add, _spacer = st.columns([1, 1, 10])
 
         all_on = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
@@ -473,7 +468,6 @@ def run_app():
 
         add_btn = col_add.button("➕ Aggiungi selezionati", type="primary", key="add_to_basket_btn")
 
-        # Flash message (mostrata sotto i pulsanti)
         if st.session_state.flash:
             f = st.session_state.flash
             {"success": st.success, "info": st.info, "warning": st.warning, "error": st.error}.get(
@@ -484,7 +478,6 @@ def run_app():
             else:
                 st.session_state.flash = None
 
-        # Griglia risultati
         default_sel = st.session_state.res_select_all_toggle and not st.session_state.reset_res_selection
         df_res_display = with_fw_prefix(df_res)[DISPLAY_COLUMNS].copy()
         df_res_display.insert(0, "sel", default_sel)
@@ -516,8 +509,8 @@ def run_app():
                 combined = combined.drop_duplicates(subset=["codice"]).reset_index(drop=True)
                 st.session_state.basket = _ensure_columns(combined)
 
-                # <<< SALVA nel LocalStorage del browser
-                save_basket_client(st.session_state.username, st.session_state.basket)
+                # SALVA nel DB
+                save_basket(st.session_state.username, st.session_state.basket)
 
                 st.session_state.res_select_all_toggle = False
                 st.session_state.reset_res_selection = True
@@ -532,7 +525,7 @@ def run_app():
     if st.session_state.active_tab == "Prodotti":
         basket = st.session_state.basket.copy()
 
-        col_sel, col_rm, col_xls, col_pdf, _spacer = st.columns([1, 1, 1, 1, 10])
+        col_sel, col_rm, col_xls, col_pdf, col_clear, _spacer = st.columns([1, 1, 1, 1, 1, 9])
 
         all_on_b = st.session_state.basket_select_all_toggle and not st.session_state.reset_basket_selection
         if col_sel.button("Deseleziona tutto il paniere" if all_on_b else "Seleziona tutto il paniere"):
@@ -540,6 +533,7 @@ def run_app():
             st.session_state.reset_basket_selection = not st.session_state.basket_select_all_toggle
 
         remove_btn = col_rm.button("🗑️ Rimuovi selezionati")
+        clear_btn = col_clear.button("🧹 Svuota paniere")
 
         basket_sorted = st.session_state.basket.sort_values(
             ["categoria", "tipologia", "provenienza", "prodotto"], kind="stable"
@@ -593,8 +587,8 @@ def run_app():
                 ].reset_index(drop=True)
                 st.session_state.basket = _ensure_columns(st.session_state.basket)
 
-                # <<< SALVA nel LocalStorage del browser
-                save_basket_client(st.session_state.username, st.session_state.basket)
+                # SALVA nel DB
+                save_basket(st.session_state.username, st.session_state.basket)
 
                 st.session_state.basket_select_all_toggle = False
                 st.session_state.reset_basket_selection = True
@@ -605,6 +599,12 @@ def run_app():
             else:
                 st.info("Seleziona almeno un articolo dal paniere.")
 
+        if clear_btn:
+            st.session_state.basket = _empty_basket_df()
+            save_basket(st.session_state.username, st.session_state.basket)
+            st.info("Paniere svuotato.")
+            st.rerun()
+
     # SIDEBAR – Footer (utente + logout) in fondo
     with sb_bottom:
         lcol, rcol = st.columns([3,1])
@@ -612,8 +612,8 @@ def run_app():
             st.caption(f"👤 {st.session_state.display_name}")
         with rcol:
             if st.button("Logout"):
-                # salva per sicurezza prima di uscire
-                save_basket_client(st.session_state.username, st.session_state.basket)
+                # salva prima di uscire
+                save_basket(st.session_state.username, st.session_state.basket)
                 for k in ["authenticated", "username", "display_name"]:
                     st.session_state[k] = None if k != "authenticated" else False
                 st.rerun()
